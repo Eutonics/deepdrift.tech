@@ -1,0 +1,1139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DeepDrift — Neural MRI for AI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Inconsolata:wght@300;400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+:root {
+  --bg:    #060809;
+  --bg1:   #0a0d12;
+  --bg2:   #0f1318;
+  --bg3:   #141a22;
+  --line:  #1a2030;
+  --line2: #252f42;
+  --text:  #c4cdd8;
+  --muted: #3d4f62;
+  --dim:   #1c2433;
+  --gold:  #d4a843;
+  --gold2: #f0c060;
+  --red:   #e03030;
+  --red2:  #ff5050;
+  --green: #3ecf8e;
+  --blue:  #4a90d9;
+  --cyan:  #22d3ee;
+  --fh: 'Syne', sans-serif;
+  --fm: 'Inconsolata', monospace;
+}
+*,*::before,*::after { box-sizing:border-box; margin:0; padding:0; }
+html { scroll-behavior:smooth; }
+body { background:var(--bg); color:var(--text); font-family:var(--fh); overflow-x:hidden; }
+
+body::before {
+  content:''; position:fixed; inset:0; pointer-events:none; z-index:0;
+  background-image:
+    linear-gradient(rgba(26,32,48,.45) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(26,32,48,.45) 1px, transparent 1px);
+  background-size:44px 44px;
+  mask-image: radial-gradient(ellipse 90% 55% at 50% 25%, black 20%, transparent 100%);
+}
+
+/* ─── NAV ─── */
+nav {
+  position:fixed; top:0; left:0; right:0; z-index:200; height:54px;
+  display:flex; align-items:center; justify-content:space-between; padding:0 36px;
+  background:linear-gradient(180deg, rgba(6,8,9,.97) 0%, transparent 100%);
+  backdrop-filter:blur(10px);
+}
+.nlogo { font-size:17px; font-weight:800; letter-spacing:-.03em; color:#e8ecf4;
+         display:flex; align-items:center; gap:9px; }
+.nmark { width:26px; height:26px; border:1.5px solid var(--gold); border-radius:5px;
+         display:flex; align-items:center; justify-content:center;
+         position:relative; overflow:hidden; }
+.nmark::after { content:''; position:absolute; bottom:0; left:0; right:0; height:45%;
+                background:var(--gold); opacity:.14; }
+.nmark svg { position:relative; z-index:1; }
+.nlinks { display:flex; gap:26px; }
+.nlink { font-size:12px; font-weight:600; color:var(--muted); text-decoration:none;
+         letter-spacing:.03em; transition:color .2s; }
+.nlink:hover { color:var(--text); }
+.ncta { padding:6px 16px; border-radius:5px; font-size:12px; font-weight:700;
+        background:rgba(212,168,67,.1); border:1px solid rgba(212,168,67,.3);
+        color:var(--gold2); text-decoration:none; transition:all .2s; letter-spacing:.02em; }
+.ncta:hover { background:rgba(212,168,67,.2); }
+
+/* ─── HERO ─── */
+.hero {
+  min-height:100vh; display:flex; flex-direction:column;
+  align-items:center; justify-content:center;
+  padding:80px 32px 48px; position:relative; z-index:1;
+}
+.eyebrow {
+  font-family:var(--fm); font-size:10px; letter-spacing:.22em;
+  color:var(--gold); text-transform:uppercase; margin-bottom:18px;
+  display:flex; align-items:center; gap:10px;
+}
+.eyebrow::before,.eyebrow::after { content:''; width:26px; height:1px; background:var(--gold); opacity:.35; }
+h1 { font-size:clamp(38px,6vw,80px); font-weight:800; letter-spacing:-.04em;
+     color:#e8ecf4; text-align:center; line-height:.93; margin-bottom:20px; }
+h1 em { font-style:normal; color:var(--gold2); }
+.hero-sub { font-family:var(--fm); font-size:13px; color:var(--muted);
+            text-align:center; max-width:480px; line-height:1.85;
+            margin-bottom:44px; font-weight:300; }
+.hero-sub strong { color:var(--text); font-weight:400; }
+
+/* ─── ARENA ─── */
+.arena {
+  width:100%; max-width:1120px;
+  background:var(--bg1); border:1px solid var(--line); border-radius:14px;
+  overflow:hidden; position:relative;
+}
+.arena::before {
+  content:''; position:absolute; top:0; left:0; right:0; height:1px; z-index:2;
+  background:linear-gradient(90deg, transparent, var(--gold), transparent); opacity:.4;
+}
+
+/* Arena header */
+.ahdr {
+  padding:11px 18px; border-bottom:1px solid var(--line);
+  display:flex; align-items:center; justify-content:space-between; background:var(--bg2);
+}
+.ahdr-left { display:flex; align-items:center; gap:14px; }
+.atitle { font-family:var(--fm); font-size:10px; letter-spacing:.12em;
+          color:var(--muted); text-transform:uppercase; }
+
+/* Scenario buttons */
+.sbtns { display:flex; gap:4px; }
+.sbtn {
+  padding:4px 12px; border-radius:4px; font-family:var(--fm); font-size:10px;
+  border:1px solid var(--line2); background:var(--bg3); color:var(--muted);
+  cursor:pointer; transition:all .15s; letter-spacing:.05em; white-space:nowrap;
+}
+.sbtn:hover { color:var(--text); border-color:var(--muted); }
+.sbtn.s-ok   { border-color:rgba(62,207,142,.4);  color:var(--green); background:rgba(62,207,142,.06); }
+.sbtn.s-w1   { border-color:rgba(212,168,67,.3);  color:var(--gold);  background:rgba(212,168,67,.05); }
+.sbtn.s-w2   { border-color:rgba(212,168,67,.5);  color:var(--gold2); background:rgba(212,168,67,.09); }
+.sbtn.s-w3   { border-color:rgba(240,120,30,.6);  color:#f08030;      background:rgba(240,120,30,.08); }
+.sbtn.s-crash{ border-color:rgba(224,48,48,.6);   color:var(--red2);  background:rgba(224,48,48,.1);
+               animation:sblink .7s step-end infinite; }
+@keyframes sblink { 50% { background:rgba(224,48,48,.2); } }
+
+/* ─── ARENA BODY ─── */
+.arena-body { display:grid; grid-template-columns:1fr 420px; min-height:420px; }
+
+/* ═══ STAGE (robot) ═══ */
+.stage {
+  position:relative; overflow:hidden;
+  background:radial-gradient(ellipse 100% 80% at 50% 70%, #080c10 0%, var(--bg1) 100%);
+  border-right:1px solid var(--line);
+}
+
+/* ground */
+.ground-line {
+  position:absolute; bottom:68px; left:0; right:0; height:1px;
+  background:linear-gradient(90deg, transparent 0%, var(--line2) 15%, var(--line2) 85%, transparent 100%);
+}
+/* ground ticks (runway marks) */
+.ground-ticks {
+  position:absolute; bottom:52px; left:0; right:0;
+  display:flex; gap:0; overflow:hidden; pointer-events:none;
+}
+.gtick { flex-shrink:0; width:32px; height:6px; border-right:1px solid var(--dim); }
+
+/* Wind particles */
+#wind-canvas { position:absolute; inset:0; pointer-events:none; }
+
+/* Robot SVG — side view */
+#robot-wrap {
+  position:absolute; bottom:68px; left:50%; transform:translateX(-50%);
+  width:120px; height:220px;
+}
+#rsvg { width:100%; height:100%; overflow:visible; }
+
+/* Anomaly flash overlay */
+#flash-overlay {
+  position:absolute; inset:0; pointer-events:none; z-index:10;
+  opacity:0; background:radial-gradient(ellipse 60% 40% at 50% 50%, rgba(255,50,50,.18) 0%, transparent 70%);
+  transition:opacity .1s;
+}
+
+/* Detection banner */
+#det-banner {
+  position:absolute; top:0; left:0; right:0; z-index:20;
+  padding:10px 20px;
+  display:flex; align-items:center; justify-content:space-between;
+  background:rgba(224,48,48,.92); backdrop-filter:blur(4px);
+  transform:translateY(-100%); transition:transform .25s cubic-bezier(.34,1.56,.64,1);
+  border-bottom:1px solid rgba(255,80,80,.5);
+}
+#det-banner.show { transform:translateY(0); }
+.det-icon { font-size:18px; }
+.det-text { font-family:var(--fm); font-size:11px; font-weight:500; letter-spacing:.1em; color:#fff; }
+.det-vel  { font-family:var(--fm); font-size:11px; color:rgba(255,255,255,.7); }
+
+/* Countdown box */
+#countdown {
+  position:absolute; bottom:80px; right:16px; z-index:15;
+  text-align:right; pointer-events:none;
+  opacity:0; transition:opacity .4s;
+}
+#countdown.show { opacity:1; }
+.cd-label { font-family:var(--fm); font-size:9px; letter-spacing:.14em; text-transform:uppercase; color:rgba(255,80,80,.7); }
+.cd-num {
+  font-family:var(--fm); font-size:52px; font-weight:500; line-height:1;
+  color:var(--red2); text-shadow:0 0 20px rgba(255,50,50,.5), 0 0 40px rgba(255,50,50,.25);
+  transition:color .3s;
+}
+.cd-num.urgent { color:#fff; text-shadow:0 0 15px var(--red2), 0 0 30px var(--red2); }
+.cd-sub { font-family:var(--fm); font-size:9px; color:rgba(255,80,80,.6); letter-spacing:.08em; }
+
+/* Status badge */
+#sbadge {
+  position:absolute; top:12px; left:14px; z-index:15;
+  padding:4px 11px; border-radius:20px; border:1px solid;
+  font-family:var(--fm); font-size:10px; font-weight:500; letter-spacing:.07em;
+  transition:all .25s; white-space:nowrap;
+}
+.sb-normal { color:var(--green); border-color:rgba(62,207,142,.3); background:rgba(62,207,142,.06); }
+.sb-warn   { color:var(--gold2); border-color:rgba(240,192,96,.4); background:rgba(212,168,67,.1);
+             animation:spulse .9s ease-in-out infinite; }
+.sb-alert  { color:#fff; border-color:rgba(255,80,80,.6); background:rgba(224,48,48,.18);
+             animation:spulse .35s ease-in-out infinite; }
+@keyframes spulse { 0%,100% { box-shadow:0 0 0 0 transparent; } 50% { box-shadow:0 0 12px 2px currentColor; } }
+
+/* Wind label */
+#wind-label {
+  position:absolute; bottom:42px; left:14px;
+  font-family:var(--fm); font-size:9px; letter-spacing:.1em; color:var(--dim);
+  transition:color .3s;
+}
+
+/* ═══ GRAPH COLUMN ═══ */
+.gcol { display:flex; flex-direction:column; overflow:hidden; }
+
+.ghdr {
+  padding:11px 16px; border-bottom:1px solid var(--line);
+  display:flex; align-items:center; justify-content:space-between; background:var(--bg2);
+}
+.gtitle { font-family:var(--fm); font-size:10px; letter-spacing:.1em; color:var(--muted); text-transform:uppercase; }
+.ppill {
+  font-family:var(--fm); font-size:10px; padding:2px 9px; border-radius:3px;
+  border:1px solid; letter-spacing:.06em; transition:all .25s;
+}
+.pp-cal { color:var(--blue);  border-color:rgba(74,144,217,.25); }
+.pp-ok  { color:var(--green); border-color:rgba(62,207,142,.25); }
+.pp-wrn { color:var(--gold2); border-color:rgba(240,192,96,.4); }
+.pp-ano { color:var(--red2);  border-color:rgba(255,80,80,.45);
+          animation:ppblink .45s step-end infinite; }
+@keyframes ppblink { 50% { opacity:.2; } }
+
+.gwrap { flex:1; padding:10px 12px 6px; min-height:0; position:relative; }
+.gwrap canvas { width:100% !important; }
+
+/* calib progress */
+.calib-bar-wrap { height:2px; background:var(--line); margin:0 12px 0; }
+.calib-bar { height:100%; background:var(--blue); width:0%; transition:width .15s; border-radius:2px; }
+
+/* metrics strip */
+.mstrip { display:grid; grid-template-columns:repeat(3,1fr); border-top:1px solid var(--line); background:var(--bg2); }
+.mc { padding:9px 13px; border-right:1px solid var(--line); }
+.mc:last-child { border-right:none; }
+.mk { font-family:var(--fm); font-size:9px; letter-spacing:.1em; color:var(--muted); text-transform:uppercase; margin-bottom:3px; }
+.mv { font-family:var(--fm); font-size:16px; font-weight:500; color:var(--text); line-height:1; transition:color .2s; }
+.mv.ok { color:var(--green); } .mv.wn { color:var(--gold2); } .mv.dr { color:var(--red2); }
+.ms { font-size:9px; color:var(--dim); margin-top:1px; }
+
+/* ─── SCROLL HINT ─── */
+.scroll-hint {
+  position:absolute; bottom:24px; left:50%; transform:translateX(-50%);
+  display:flex; flex-direction:column; align-items:center; gap:5px;
+  font-family:var(--fm); font-size:9px; letter-spacing:.12em; color:var(--dim);
+  animation:float 2s ease-in-out infinite;
+}
+@keyframes float { 0%,100%{transform:translateX(-50%) translateY(0)} 50%{transform:translateX(-50%) translateY(5px)} }
+
+/* ─── SECTIONS ─── */
+section { position:relative; z-index:1; padding:90px 36px; }
+.inner { max-width:1100px; margin:0 auto; }
+.stag { font-family:var(--fm); font-size:10px; letter-spacing:.2em; color:var(--gold);
+        text-transform:uppercase; margin-bottom:10px; }
+.sh   { font-size:clamp(26px,3.8vw,42px); font-weight:800; letter-spacing:-.04em; color:#e8ecf4; line-height:1.05; }
+.ssub { font-family:var(--fm); font-size:13px; color:var(--muted); margin-top:10px;
+        line-height:1.85; font-weight:300; max-width:520px; }
+
+/* How grid */
+.hgrid { display:grid; grid-template-columns:repeat(3,1fr); gap:1px; background:var(--line);
+         border:1px solid var(--line); border-radius:12px; overflow:hidden; margin-top:44px; }
+.hcard { background:var(--bg1); padding:28px 24px; }
+.hnum  { font-family:var(--fm); font-size:10px; letter-spacing:.15em; color:var(--muted); margin-bottom:14px; }
+.hh    { font-size:16px; font-weight:700; color:#e8ecf4; margin-bottom:8px; letter-spacing:-.02em; }
+.hp    { font-family:var(--fm); font-size:11px; color:var(--muted); line-height:1.9; font-weight:300; }
+.hac   { display:inline-block; margin-top:12px; font-family:var(--fm); font-size:10px; color:var(--gold); letter-spacing:.04em; }
+
+/* Stats */
+.sgrid { display:grid; grid-template-columns:repeat(4,1fr); gap:18px; margin-top:44px; }
+.scard { padding:24px 20px; background:var(--bg1); border:1px solid var(--line); border-radius:10px; position:relative; overflow:hidden; }
+.scard::before { content:''; position:absolute; top:0; left:0; right:0; height:2px; background:linear-gradient(90deg,transparent,var(--gold),transparent); opacity:.28; }
+.snum { font-size:clamp(24px,3vw,40px); font-weight:800; color:var(--gold2); letter-spacing:-.04em; line-height:1; }
+.slbl { font-family:var(--fm); font-size:11px; color:var(--muted); margin-top:7px; line-height:1.6; }
+
+/* Patterns */
+.pgrid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-top:32px; }
+.pcard { padding:15px 18px; background:var(--bg1); border:1px solid var(--line); border-radius:8px; display:flex; gap:12px; align-items:flex-start; }
+.pdot  { width:7px; height:7px; border-radius:50%; flex-shrink:0; margin-top:4px; }
+.ph    { font-size:13px; font-weight:600; color:var(--text); margin-bottom:3px; letter-spacing:-.01em; }
+.pp2   { font-family:var(--fm); font-size:11px; color:var(--muted); line-height:1.75; font-weight:300; }
+
+/* CTA */
+.cta-sec { text-align:center; padding:90px 36px; position:relative; z-index:1; }
+.cta-h { font-size:clamp(28px,4.5vw,54px); font-weight:800; letter-spacing:-.04em; color:#e8ecf4; margin-bottom:12px; }
+.cta-sub { font-family:var(--fm); font-size:13px; color:var(--muted); margin-bottom:32px; font-weight:300; }
+.code-blk { background:var(--bg1); border:1px solid var(--line); border-radius:10px;
+            padding:16px 24px; display:inline-block; margin-bottom:28px; text-align:left; }
+.cl { font-family:var(--fm); font-size:13px; color:var(--text); line-height:1.9; }
+.cl .c{color:var(--muted)} .cl .k{color:var(--blue)} .cl .s{color:var(--gold)}
+.cta-btns { display:flex; gap:10px; justify-content:center; flex-wrap:wrap; }
+.btn-p { padding:12px 28px; border-radius:7px; font-size:13px; font-weight:700;
+         background:var(--gold); color:#080a0e; text-decoration:none; transition:all .2s; }
+.btn-p:hover { background:var(--gold2); transform:translateY(-1px); box-shadow:0 6px 20px rgba(212,168,67,.2); }
+.btn-g { padding:12px 28px; border-radius:7px; font-size:13px; font-weight:600;
+         background:transparent; border:1px solid var(--line2); color:var(--text);
+         text-decoration:none; transition:all .2s; }
+.btn-g:hover { border-color:var(--muted); transform:translateY(-1px); }
+
+footer { border-top:1px solid var(--line); padding:26px 36px;
+         display:flex; align-items:center; justify-content:space-between; position:relative; z-index:1; }
+.flogo { font-size:14px; font-weight:800; color:var(--muted); letter-spacing:-.02em; }
+.flinks { display:flex; gap:20px; }
+.flink { font-family:var(--fm); font-size:11px; color:var(--muted); text-decoration:none; transition:color .2s; }
+.flink:hover { color:var(--text); }
+.fcopy { font-family:var(--fm); font-size:10px; color:var(--dim); }
+
+::-webkit-scrollbar{width:4px} ::-webkit-scrollbar-track{background:transparent} ::-webkit-scrollbar-thumb{background:var(--line2);border-radius:4px}
+
+@media(max-width:820px){
+  nav{padding:0 16px} .nlinks{display:none}
+  .arena-body{grid-template-columns:1fr; grid-template-rows:360px 1fr}
+  .stage{border-right:none;border-bottom:1px solid var(--line)}
+  .hgrid,.sgrid,.pgrid{grid-template-columns:1fr}
+  section,.cta-sec{padding:60px 18px}
+  footer{flex-direction:column;gap:12px;text-align:center;padding:22px 18px}
+}
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="nlogo">
+    <div class="nmark">
+      <svg width="13" height="11" viewBox="0 0 14 11" fill="none">
+        <polyline points="0,9 3.5,4 7,7 10,1.5 13.5,5" stroke="#d4a843" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    DeepDrift
+  </div>
+  <div class="nlinks">
+    <a class="nlink" href="#how">How it works</a>
+    <a class="nlink" href="#patterns">Failure patterns</a>
+    <a class="nlink" href="https://github.com/Eutonics/DeepDrift" target="_blank">GitHub</a>
+    <a class="nlink" href="https://zenodo.org/records/18622319" target="_blank">Paper</a>
+  </div>
+  <a class="ncta" href="monitor.html">Full monitor →</a>
+</nav>
+
+<!-- HERO -->
+<div class="hero">
+  <div class="eyebrow">Neural MRI for AI</div>
+  <h1>See failure coming<br><em>before it happens</em></h1>
+  <p class="hero-sub">
+    DeepDrift monitors <strong>hidden-state velocity</strong> inside your neural network —
+    detecting anomalies <strong>57–168 steps</strong> before they reach the output.
+  </p>
+
+  <!-- ARENA -->
+  <div class="arena">
+    <div class="ahdr">
+      <div class="ahdr-left">
+        <div class="atitle">rl agent · live demo</div>
+      </div>
+      <div class="sbtns">
+        <button class="sbtn s-ok"    id="b0" onclick="setS('normal')">Normal</button>
+        <button class="sbtn"         id="b1" onclick="setS('wind1')">Wind 🌬 light</button>
+        <button class="sbtn"         id="b2" onclick="setS('wind2')">Wind 💨 strong</button>
+        <button class="sbtn"         id="b3" onclick="setS('wind3')">Wind 🌪 hurricane</button>
+        <button class="sbtn"         id="b4" onclick="setS('crash')">Policy collapse</button>
+      </div>
+    </div>
+
+    <div class="arena-body">
+
+      <!-- STAGE -->
+      <div class="stage" id="stage">
+        <canvas id="wind-canvas"></canvas>
+        <div class="ground-line"></div>
+        <div class="ground-ticks" id="gticks"></div>
+
+        <!-- Detection banner -->
+        <div id="det-banner">
+          <span class="det-icon">⚡</span>
+          <span class="det-text">ANOMALY DETECTED — velocity exceeds threshold</span>
+          <span class="det-vel" id="det-vel-txt">v = —</span>
+        </div>
+
+        <!-- Status badge -->
+        <div id="sbadge" class="sb-normal">● NORMAL</div>
+
+        <!-- Wind label -->
+        <div id="wind-label">WIND: 0 N</div>
+
+        <!-- Robot -->
+        <div id="robot-wrap">
+          <!-- Side-view robot SVG. Origin = hip joint. Walking right. -->
+          <svg id="rsvg" viewBox="-30 -160 200 240" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <filter id="glow-g">
+                <feGaussianBlur stdDeviation="3" result="b"/>
+                <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+              </filter>
+              <filter id="glow-r">
+                <feGaussianBlur stdDeviation="5" result="b"/>
+                <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+              </filter>
+            </defs>
+
+            <!-- ── ROBOT SIDE-VIEW ── -->
+            <!-- The robot faces right. Hip pivot = (60, 0). -->
+            <!-- All limbs rotate around their parent joint. -->
+
+            <!-- BACK LEG (drawn first = behind) -->
+            <g id="leg-back">
+              <!-- thigh -->
+              <line id="thigh-back" x1="60" y1="0" x2="60" y2="50"
+                    stroke="#1e2a3a" stroke-width="10" stroke-linecap="round"/>
+              <!-- shin -->
+              <g id="shin-back-g">
+                <line id="shin-back" x1="0" y1="0" x2="0" y2="44"
+                      stroke="#192230" stroke-width="8" stroke-linecap="round"/>
+                <!-- foot -->
+                <rect id="foot-back" x="-8" y="40" width="26" height="8" rx="4"
+                      fill="none" stroke="#192230" stroke-width="2"/>
+              </g>
+            </g>
+
+            <!-- TORSO -->
+            <g id="torso-g">
+              <!-- body -->
+              <rect id="body-rect" x="30" y="-95" width="60" height="70" rx="6"
+                    fill="none" stroke="#2d3a50" stroke-width="1.8"/>
+              <!-- chest panel -->
+              <rect x="38" y="-88" width="44" height="22" rx="3"
+                    fill="none" stroke="#1e2a3a" stroke-width="1"/>
+              <!-- core indicator -->
+              <circle id="core-dot" cx="60" cy="-55" r="6" fill="none" stroke="#3ecf8e" stroke-width="1.8"/>
+              <circle id="core-in"  cx="60" cy="-55" r="3" fill="#3ecf8e"/>
+              <!-- velocity halo -->
+              <circle id="vel-halo" cx="60" cy="-55" r="32"
+                      fill="none" stroke="#d4a843" stroke-width="1.5" opacity="0"/>
+
+              <!-- HEAD -->
+              <g id="head-g">
+                <!-- neck -->
+                <line x1="60" y1="-95" x2="60" y2="-108"
+                      stroke="#1a2535" stroke-width="8" stroke-linecap="round"/>
+                <!-- head box -->
+                <rect x="38" y="-145" width="44" height="38" rx="7"
+                      fill="none" stroke="#2d3a50" stroke-width="1.8"/>
+                <!-- visor -->
+                <rect x="44" y="-138" width="32" height="14" rx="3"
+                      fill="rgba(74,144,217,.1)" stroke="#4a90d9" stroke-width="1.2"/>
+                <!-- eye dot -->
+                <circle id="eye-dot" cx="60" cy="-131" r="4" fill="#4a90d9"/>
+              </g>
+
+              <!-- BACK ARM -->
+              <g id="arm-back">
+                <line x1="60" y1="-88" x2="38" y2="-62"
+                      stroke="#1e2a3a" stroke-width="7" stroke-linecap="round"/>
+                <line x1="38" y1="-62" x2="24" y2="-40"
+                      stroke="#192230" stroke-width="5" stroke-linecap="round"/>
+                <circle cx="38" cy="-62" r="4" fill="none" stroke="#1a2535" stroke-width="1.5"/>
+              </g>
+
+              <!-- FRONT ARM -->
+              <g id="arm-front">
+                <line x1="60" y1="-88" x2="82" y2="-62"
+                      stroke="#2d3a50" stroke-width="7" stroke-linecap="round"/>
+                <line x1="82" y1="-62" x2="96" y2="-40"
+                      stroke="#243040" stroke-width="5" stroke-linecap="round"/>
+                <circle cx="82" cy="-62" r="4" fill="none" stroke="#2d3a50" stroke-width="1.5"/>
+              </g>
+            </g>
+
+            <!-- FRONT LEG (drawn last = in front) -->
+            <g id="leg-front">
+              <line id="thigh-front" x1="60" y1="0" x2="60" y2="50"
+                    stroke="#2d3a50" stroke-width="11" stroke-linecap="round"/>
+              <g id="shin-front-g">
+                <line id="shin-front" x1="0" y1="0" x2="0" y2="44"
+                      stroke="#243040" stroke-width="9" stroke-linecap="round"/>
+                <rect id="foot-front" x="-8" y="40" width="26" height="8" rx="4"
+                      fill="none" stroke="#2d3a50" stroke-width="2.2"/>
+              </g>
+            </g>
+
+          </svg>
+        </div>
+
+        <!-- Countdown -->
+        <div id="countdown">
+          <div class="cd-label">collapse in</div>
+          <div class="cd-num" id="cd-num">—</div>
+          <div class="cd-sub">steps</div>
+        </div>
+      </div>
+
+      <!-- GRAPH COLUMN -->
+      <div class="gcol">
+        <div class="ghdr">
+          <span class="gtitle">v<sub>t</sub> = ‖h<sub>t</sub> − h<sub>t−1</sub>‖₂  (semantic velocity)</span>
+          <span class="ppill pp-cal" id="ppill">CALIBRATING</span>
+        </div>
+        <div class="gwrap" style="flex:1;min-height:220px">
+          <canvas id="gc"></canvas>
+        </div>
+        <div class="calib-bar-wrap"><div class="calib-bar" id="cbar"></div></div>
+        <div class="mstrip">
+          <div class="mc">
+            <div class="mk">Velocity EWMA</div>
+            <div class="mv" id="mvel">—</div>
+            <div class="ms">‖h_t − h_{t−1}‖₂</div>
+          </div>
+          <div class="mc">
+            <div class="mk">Threshold τ</div>
+            <div class="mv" id="mtau">—</div>
+            <div class="ms">Q₇₅ + 1.5·IQR</div>
+          </div>
+          <div class="mc">
+            <div class="mk">Steps to collapse</div>
+            <div class="mv" id="madv">—</div>
+            <div class="ms">advance warning</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="scroll-hint">
+    <svg width="12" height="8" viewBox="0 0 12 8" fill="none">
+      <path d="M1 1l5 5 5-5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    scroll
+  </div>
+</div>
+
+<!-- HOW IT WORKS -->
+<section id="how">
+  <div class="inner">
+    <div class="stag">Mechanism</div>
+    <h2 class="sh">How DeepDrift works</h2>
+    <p class="ssub">One formula. 80-step calibration. O(1) per step. No retraining required.</p>
+    <div class="hgrid">
+      <div class="hcard">
+        <div class="hnum">01</div>
+        <div class="hh">Measure hidden velocity</div>
+        <div class="hp">At each forward pass, compute the L2-norm between consecutive hidden states: <strong style="color:var(--gold2)">v_t = ‖h_t − h_{t−1}‖₂</strong>. Captures kinetic energy of representations — invisible at the output layer.</div>
+        <div class="hac">↳ Zero training required</div>
+      </div>
+      <div class="hcard">
+        <div class="hnum">02</div>
+        <div class="hh">Calibrate in 80 steps</div>
+        <div class="hp">Run 80–100 normal-operation steps to establish baseline. Threshold <strong style="color:var(--gold2)">τ = Q₇₅ + 1.5·IQR</strong> is computed non-parametrically — no Gaussian assumptions, robust to outliers.</div>
+        <div class="hac">↳ Works on any architecture</div>
+      </div>
+      <div class="hcard">
+        <div class="hnum">03</div>
+        <div class="hh">Alert before output fails</div>
+        <div class="hp">When v_t &gt; τ, the network is in a turbulent state. In RL this precedes deviation by <strong style="color:var(--gold2)">57–168 steps</strong>. In ViT OOD detection AUROC reaches 0.869. Overhead &lt;1.5%.</div>
+        <div class="hac">↳ Lagging indicators become leading</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section style="padding:0 36px 90px">
+  <div class="inner">
+    <div class="sgrid">
+      <div class="scard"><div class="snum">0.869</div><div class="slbl">AUROC · ViT-B/16<br>CIFAR-100→SVHN OOD</div></div>
+      <div class="scard"><div class="snum">168</div><div class="slbl">Steps advance warning<br>CartPole DQN (AUC 0.985)</div></div>
+      <div class="scard"><div class="snum">1224×</div><div class="slbl">Better than random<br>distributed orchestration</div></div>
+      <div class="scard"><div class="snum">41%</div><div class="slbl">Compute savings<br>LoRA fine-tuning</div></div>
+    </div>
+  </div>
+</section>
+
+<section id="patterns">
+  <div class="inner">
+    <div class="stag">Taxonomy</div>
+    <h2 class="sh">Seven failure signatures</h2>
+    <p class="ssub">Distinct velocity patterns across architectures and domains.</p>
+    <div class="pgrid">
+      <div class="pcard"><div class="pdot" style="background:var(--red2)"></div><div><div class="ph">Policy Panic</div><div class="pp2">RL agent velocity spikes 57–168 steps before trajectory deviation. AUC 0.985 (CartPole), 0.968 (LunarLander).</div></div></div>
+      <div class="pcard"><div class="pdot" style="background:var(--gold)"></div><div><div class="ph">Semantic Tremor</div><div class="pp2">LLM hallucination: high-frequency velocity oscillation in transformer layers. Lead time 7.2 tokens. AUC 0.891.</div></div></div>
+      <div class="pcard"><div class="pdot" style="background:var(--blue)"></div><div><div class="ph">Three-Phase ViT Pattern</div><div class="pp2">OOD: Elevation (L1–7) → Compensation (L8–10, inverted) → Terminal Spike (L11, +26.8%). Peak AUROC 0.983.</div></div></div>
+      <div class="pcard"><div class="pdot" style="background:#a78bfa)"></div><div><div class="ph">Shadow Signature</div><div class="pp2">Adversarial perturbations ε ≥ 0.05 create a characteristic velocity shadow. Nearly invisible at ε=0.001.</div></div></div>
+      <div class="pcard"><div class="pdot" style="background:#ff6b6b"></div><div><div class="ph">Burning Bottleneck</div><div class="pp2">Diffusion memorization in IR band detected at epoch ~300 vs loss divergence at ~1000. 3× earlier.</div></div></div>
+      <div class="pcard"><div class="pdot" style="background:var(--cyan)"></div><div><div class="ph">Avalanche Effect</div><div class="pp2">Deep CNNs under severe shift: exponential velocity cascade across layers before output degrades.</div></div></div>
+    </div>
+  </div>
+</section>
+
+<div class="cta-sec">
+  <h2 class="cta-h">Two lines to start</h2>
+  <p class="cta-sub">Attach to any PyTorch layer. No model changes.</p>
+  <div class="code-blk">
+    <div class="cl"><span class="c"># pip install deepdrift</span></div>
+    <div class="cl"><span class="k">monitor</span> = DeepDriftMonitor(model)</div>
+    <div class="cl"><span class="k">monitor</span>.calibrate(loader)<span class="c">  # 80 steps</span></div>
+    <div class="cl" style="margin-top:6px"><span class="c"># each forward pass:</span></div>
+    <div class="cl">status = <span class="k">monitor</span>.step(batch)</div>
+    <div class="cl"><span class="s">if</span> status.is_anomalous: alert()</div>
+  </div>
+  <div class="cta-btns">
+    <a class="btn-p" href="monitor.html">Open full monitor</a>
+    <a class="btn-g" href="https://github.com/Eutonics/DeepDrift" target="_blank">GitHub</a>
+    <a class="btn-g" href="https://zenodo.org/records/18622319" target="_blank">Paper</a>
+  </div>
+</div>
+
+<footer>
+  <div class="flogo">DeepDrift</div>
+  <div class="flinks">
+    <a class="flink" href="https://github.com/Eutonics/DeepDrift" target="_blank">GitHub</a>
+    <a class="flink" href="https://zenodo.org/records/18622319" target="_blank">Zenodo</a>
+    <a class="flink" href="https://pypi.org/project/deepdrift/" target="_blank">PyPI</a>
+    <a class="flink" href="monitor.html">Monitor</a>
+  </div>
+  <div class="fcopy">MIT License · Alexey Evtushenko</div>
+</footer>
+
+<!-- ══════════════════════════════════════════
+     JAVASCRIPT
+══════════════════════════════════════════ -->
+<script>
+// ─── Monitor core ────────────────────────────────
+class Monitor {
+  constructor(cs=80, k=1.5, a=0.3){ this.cs=cs; this.k=k; this.a=a; this.reset(); }
+  reset(){
+    this.prev=null; this.cvels=[]; this.calibrated=false;
+    this.tau=null; this.ewma=0; this.step=0;
+  }
+  push(h){
+    if(!this.prev){ this.prev=Float32Array.from(h); return this._s(0); }
+    let sq=0;
+    for(let i=0;i<h.length;i++){ const d=h[i]-this.prev[i]; sq+=d*d; }
+    const v=Math.sqrt(sq);
+    this.prev=Float32Array.from(h);
+    this.ewma = this.step===0 ? v : this.a*v+(1-this.a)*this.ewma;
+    if(!this.calibrated){
+      this.cvels.push(v);
+      if(this.cvels.length>=this.cs){
+        const sorted=[...this.cvels].sort((a,b)=>a-b), n=sorted.length;
+        const q25=sorted[Math.floor(n*.25)], q75=sorted[Math.floor(n*.75)];
+        this.tau = q75 + this.k*(q75-q25);
+        this.calibrated=true;
+      }
+    }
+    this.step++;
+    return this._s(v);
+  }
+  _s(v){
+    const an=this.calibrated && this.ewma>this.tau;
+    return { step:this.step, v, ewma:this.ewma, tau:this.tau, an,
+             calibrated:this.calibrated, cp:Math.min(this.cvels.length/this.cs,1) };
+  }
+}
+
+// ─── Signal generator ────────────────────────────
+const WIND_STRENGTH = { normal:0, wind1:5, wind2:14, wind3:25, crash:0 };
+const WIND_LABEL    = { normal:'0 N', wind1:'5 N (light)', wind2:'14 N (strong)', wind3:'25 N (hurricane)', crash:'—' };
+
+const Gen = {
+  t:0, dim:48, sc:'normal', base:null,
+  init(sc){
+    this.sc=sc; this.t=0;
+    this.base=Float32Array.from({length:this.dim}, ()=>Math.random()*2-1);
+  },
+  next(){
+    this.t++;
+    const t=this.t, d=this.dim, b=this.base;
+    const n=(s=1)=>(Math.random()-.5)*2*s;
+    const h=new Float32Array(d);
+    const sc=this.sc;
+
+    if(sc==='normal'){
+      for(let i=0;i<d;i++) h[i]=b[i]+Math.sin(t*.05+i*.3)*.35+n(.22);
+
+    } else if(sc==='wind1'){
+      // Light wind — mild internal turbulence, policy holds
+      const w=Math.sin(t*.06)*.4+.4;
+      for(let i=0;i<d;i++) h[i]=b[i]+n(.22)+w*Math.sin(t*.08+i*.5)*.8;
+
+    } else if(sc==='wind2'){
+      // Strong wind — noticeable perturbation, agent compensates (Breeze Paradox)
+      const w=Math.sin(t*.05)*.6+.8;
+      for(let i=0;i<d;i++) h[i]=b[i]+n(.22)+w*Math.sin(t*.07+i*.4)*1.6;
+
+    } else if(sc==='wind3'){
+      // Hurricane — extreme, anomaly, yet agent may survive (Breeze Paradox at 25N)
+      const w=Math.abs(Math.sin(t*.04))*.9+1.0;
+      for(let i=0;i<d;i++) h[i]=b[i]+n(.3)+w*Math.sin(t*.06+i*.35)*2.8;
+
+    } else if(sc==='crash'){
+      // Calm then sudden collapse at t≈90
+      if(t<80)       for(let i=0;i<d;i++) h[i]=b[i]+n(.2);
+      else if(t<150){
+        const e=(t-80)/70;
+        for(let i=0;i<d;i++) h[i]=b[i]*(1+e*1.0)+n(.22+e*1.5);
+      } else          for(let i=0;i<d;i++) h[i]=n(3.5)+b[i]*(1+n(.9));
+    }
+    return h;
+  }
+};
+
+// ─── Robot side-view animator ────────────────────
+// Hip origin = (60, 0) in SVG space
+// Phase: walk cycle angle in radians
+const Robot = {
+  phase: 0,       // walk cycle
+  fallAngle: 0,   // fall tilt
+  falling: false,
+  tremor: 0,      // wobble intensity 0..1
+  lean: 0,        // lean angle from wind
+
+  update(sc, anomalous, ratio, windStr){
+    const t = performance.now()/1000;
+    this.phase += 0.12;
+
+    // Walk cycle — front/back leg alternate
+    // thigh swings ±20deg around hip, shin follows
+    const THIGH_AMP  = 22;
+    const SHIN_EXTRA = 18; // shin bends backward on back-swing
+
+    let frontThigh = Math.sin(this.phase) * THIGH_AMP;
+    let backThigh  = Math.sin(this.phase + Math.PI) * THIGH_AMP;
+    let frontShin  = Math.max(0, -Math.sin(this.phase)) * SHIN_EXTRA + 8;
+    let backShin   = Math.max(0,  Math.sin(this.phase)) * SHIN_EXTRA + 8;
+
+    // Arm swing (opposite to legs)
+    let frontArm = Math.sin(this.phase + Math.PI) * 18;
+    let backArm  = Math.sin(this.phase) * 18;
+
+    // Head bob
+    const headBob = Math.abs(Math.sin(this.phase * 2)) * 2;
+
+    // Wind lean
+    const targetLean = windStr * 0.45;
+    this.lean += (targetLean - this.lean) * 0.06;
+
+    // Tremor shake
+    let shakeX=0, shakeY=0, bodyTilt=this.lean;
+    if(this.tremor > 0){
+      shakeX = (Math.random()-.5)*this.tremor*12;
+      shakeY = (Math.random()-.5)*this.tremor*5;
+      bodyTilt += (Math.random()-.5)*this.tremor*16;
+      frontThigh += (Math.random()-.5)*this.tremor*20;
+      backThigh  += (Math.random()-.5)*this.tremor*20;
+    }
+
+    // Fall
+    if(this.falling){
+      this.fallAngle = Math.min(this.fallAngle+3.2, 90);
+      frontThigh = 20 + this.fallAngle*.3;
+      backThigh  = -10;
+      frontShin  = 30;
+      backShin   = 10;
+      shakeX = Math.random()*3;
+      bodyTilt = this.fallAngle;
+    }
+
+    // Update tremor target
+    const targetTremor = this.falling ? 0 : (anomalous ? Math.min((ratio-0.8)/.6, 1) : 0);
+    this.tremor += (targetTremor - this.tremor) * 0.08;
+
+    // Colors
+    const eyeC  = anomalous ? '#ff5050' : '#4a90d9';
+    const coreC = anomalous ? (ratio>1.4?'#ff5050':'#d4a843') : '#3ecf8e';
+    const haloO = Math.min(this.tremor*.9, .85);
+    const haloR = 28 + Math.sin(t*4)*5;
+    const haloC = anomalous ? '#ff5050' : '#d4a843';
+
+    // ── Apply transforms ──
+    const $ = id => document.getElementById(id);
+
+    // Whole robot body pivots from hip at (60,0), with fall rotation
+    $('torso-g').setAttribute('transform',
+      `translate(${shakeX},${shakeY}) rotate(${bodyTilt}, 60, 0)`);
+    $('leg-front').setAttribute('transform',
+      `translate(${shakeX},${shakeY}) rotate(${bodyTilt}, 60, 0)`);
+    $('leg-back').setAttribute('transform',
+      `translate(${shakeX},${shakeY}) rotate(${bodyTilt}, 60, 0)`);
+
+    // Head bob
+    $('head-g').setAttribute('transform', `translate(0,${headBob})`);
+
+    // Front leg: thigh rotates around hip (60,0)
+    // shin bends around knee (end of thigh)
+    const frontKneeX = 60 + Math.sin(frontThigh*Math.PI/180)*50;
+    const frontKneeY =      Math.cos(frontThigh*Math.PI/180)*50;
+    $('leg-front').children[0].setAttribute('transform', `rotate(${frontThigh}, 60, 0)`);
+    $('shin-front-g').setAttribute('transform',
+      `translate(${frontKneeX},${frontKneeY}) rotate(${frontShin}, 0, 0)`);
+
+    // Back leg
+    const backKneeX = 60 + Math.sin(backThigh*Math.PI/180)*50;
+    const backKneeY =      Math.cos(backThigh*Math.PI/180)*50;
+    $('leg-back').children[0].setAttribute('transform', `rotate(${backThigh}, 60, 0)`);
+    $('shin-back-g').setAttribute('transform',
+      `translate(${backKneeX},${backKneeY}) rotate(${backShin}, 0, 0)`);
+
+    // Arms (swing around shoulder at 60,-88)
+    $('arm-front').setAttribute('transform', `rotate(${frontArm}, 60, -88)`);
+    $('arm-back').setAttribute('transform',  `rotate(${backArm},  60, -88)`);
+
+    // Halo, colors
+    $('vel-halo').setAttribute('opacity', haloO);
+    $('vel-halo').setAttribute('r', haloR);
+    $('vel-halo').setAttribute('stroke', haloC);
+    $('vel-halo').setAttribute('filter', anomalous&&ratio>1.2 ? 'url(#glow-r)' : '');
+    $('core-dot').setAttribute('stroke', coreC);
+    $('core-in').setAttribute('fill', coreC);
+    $('core-in').setAttribute('filter', anomalous ? 'url(#glow-r)' : '');
+    $('eye-dot').setAttribute('fill', eyeC);
+  }
+};
+
+// ─── Wind particle system ────────────────────────
+const WindParticles = {
+  canvas: null, ctx: null, particles: [],
+  W: 0, H: 0, speed: 0,
+
+  init(){
+    this.canvas = document.getElementById('wind-canvas');
+    this.ctx = this.canvas.getContext('2d');
+    this.resize();
+    window.addEventListener('resize', ()=>this.resize());
+  },
+  resize(){
+    const stage = document.getElementById('stage');
+    this.W = this.canvas.width  = stage.offsetWidth;
+    this.H = this.canvas.height = stage.offsetHeight;
+  },
+  setSpeed(s){ this.speed = s; },
+  spawn(){
+    if(this.speed < 2) return;
+    const count = Math.floor(this.speed/3);
+    for(let i=0;i<count;i++){
+      this.particles.push({
+        x: this.W + 10,
+        y: Math.random() * this.H,
+        len: 20 + Math.random()*40 * (this.speed/25),
+        speed: this.speed*1.2 + Math.random()*this.speed,
+        opacity: (.2 + Math.random()*.5) * Math.min(this.speed/10,1),
+        width: .5 + Math.random()*1.2,
+        wobble: (Math.random()-.5)*.5,
+      });
+    }
+  },
+  update(){
+    const ctx=this.ctx;
+    ctx.clearRect(0,0,this.W,this.H);
+    this.spawn();
+
+    ctx.lineCap='round';
+    this.particles = this.particles.filter(p=>{
+      p.x -= p.speed;
+      p.y += p.wobble;
+      if(p.x < -p.len) return false;
+
+      ctx.globalAlpha = p.opacity;
+      ctx.strokeStyle = '#b0c8e8';
+      ctx.lineWidth   = p.width;
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(p.x + p.len, p.y);
+      ctx.stroke();
+      return true;
+    });
+    ctx.globalAlpha = 1;
+  }
+};
+
+// ─── State (declared early — referenced by annotationPlugin) ─────
+let mon = new Monitor();
+let scenario = 'normal';
+let steps = 0;
+let flashTimer = null;
+let flashActive = false;
+let calibratedTau = null;
+let firstDetectStep = null;
+let collapseStep = null;
+let wasAnomAlous = false;
+
+// ─── Chart ───────────────────────────────────────
+const MAX = 220;
+const vr=[], ve=[], vt=[], lb=[];
+const gctx = document.getElementById('gc').getContext('2d');
+
+// Annotation plugin (inline — no external dep)
+const annotationPlugin = {
+  id:'inlineAnnot',
+  afterDraw(chart){
+    const {ctx, chartArea:{left,right,top,bottom}, scales:{x,y}} = chart;
+    if(!calibratedTau || !vt.length) return;
+    // τ label on threshold line
+    const yTau = y.getPixelForValue(calibratedTau);
+    if(yTau>top && yTau<bottom){
+      ctx.save();
+      ctx.font = '9px Inconsolata, monospace';
+      ctx.fillStyle = 'rgba(224,80,80,.55)';
+      ctx.textAlign = 'right';
+      ctx.fillText('τ baseline', right-4, yTau-4);
+      ctx.restore();
+    }
+    // Breeze Paradox label for wind scenarios
+    if(['wind2','wind3'].includes(scenario) && ve.length>30){
+      const midX = (left+right)/2;
+      const maxV = Math.max(...ve.filter(v=>v!=null));
+      if(maxV > (calibratedTau||0)*0.6){
+        const yMid = y.getPixelForValue(maxV*.7);
+        ctx.save();
+        ctx.font = '10px Inconsolata, monospace';
+        ctx.fillStyle = 'rgba(212,168,67,.7)';
+        ctx.textAlign = 'center';
+        ctx.fillText('⚡ Breeze Paradox — agent compensates internally', midX, Math.max(yMid, top+14));
+        ctx.restore();
+      }
+    }
+  }
+};
+Chart.register(annotationPlugin);
+
+const ch = new Chart(gctx, {
+  type:'line',
+  data:{ labels:lb, datasets:[
+    { data:vr, borderColor:'rgba(74,144,217,.2)', borderWidth:1, pointRadius:0, tension:.35, fill:false, order:3 },
+    { data:ve, borderColor:'#d4a843', borderWidth:2.5, pointRadius:0, tension:.4,
+      fill:{target:2, above:'rgba(224,80,80,.1)', below:'rgba(212,168,67,.04)'}, order:1 },
+    { data:vt, borderColor:'rgba(224,48,48,.42)', borderWidth:1.5, borderDash:[5,4],
+      pointRadius:0, fill:false, order:2 }
+  ]},
+  options:{
+    responsive:true, maintainAspectRatio:false, animation:{duration:0},
+    plugins:{ legend:{display:false}, tooltip:{
+      mode:'index', intersect:false,
+      backgroundColor:'#0f1318', borderColor:'#1a2030', borderWidth:1,
+      titleColor:'#3d4f62', bodyColor:'#c4cdd8',
+      titleFont:{family:'Inconsolata',size:9}, bodyFont:{family:'Inconsolata',size:10},
+      callbacks:{ label: c=> ` ${['raw','ewma','τ'][c.datasetIndex]}: ${c.raw!=null?c.raw.toFixed(3):'—'}` }
+    }},
+    scales:{
+      x:{ ticks:{color:'#1a2030',maxTicksLimit:6,font:{family:'Inconsolata',size:9}},
+          grid:{color:'rgba(255,255,255,.018)'} },
+      y:{ min:0, ticks:{color:'#1a2030',font:{family:'Inconsolata',size:9}},
+          grid:{color:'rgba(255,255,255,.018)'} }
+    }
+  }
+});
+
+// Ground ticks — scrolling animation
+const gt = document.getElementById('gticks');
+for(let i=0;i<80;i++) gt.innerHTML += '<div class="gtick"></div>';
+let groundOffset = 0;
+function scrollGround(speed=1.2){
+  groundOffset = (groundOffset + speed) % 32;
+  document.getElementById('gticks').style.transform = `translateX(-${groundOffset}px)`;
+}
+
+// Init wind
+WindParticles.init();
+
+// ─── Pre-calibrate on normal silently ────────────
+// Run 80 steps of normal signal to lock τ before user sees anything
+(function preCalibrate(){
+  const preGen = { t:0, dim:48, base:Float32Array.from({length:48},()=>Math.random()*2-1),
+    next(){ this.t++; const h=new Float32Array(48);
+      for(let i=0;i<48;i++) h[i]=this.base[i]+Math.sin(this.t*.05+i*.3)*.35+(Math.random()-.5)*.44;
+      return h; } };
+  const preMon = new Monitor(80, 1.5, 0.3);
+  for(let i=0;i<85;i++) preMon.push(preGen.next());
+  calibratedTau = preMon.tau;
+  // Inject locked τ into live monitor so it never re-calibrates from wind
+  mon.tau = calibratedTau;
+  mon.calibrated = true;
+  mon.cvels = new Array(80).fill(calibratedTau / 3); // fake history
+  document.getElementById('cbar').style.width = '100%';
+  document.getElementById('cbar').style.background = 'var(--green)';
+  document.getElementById('ppill').className = 'ppill pp-ok';
+  document.getElementById('ppill').textContent = '✓ NORMAL';
+})();
+
+// ─── Set scenario ────────────────────────────────
+function setS(s){
+  scenario = s;
+  Gen.init(s);
+
+  // CRITICAL: preserve calibrated τ — only reset step counter & history, not calibration
+  mon.step = 0;
+  mon.prev = null;
+  mon.ewma = 0;
+  mon.tau = calibratedTau;       // always use normal-baseline τ
+  mon.calibrated = true;
+  mon.cvels = new Array(80).fill(calibratedTau / 3);
+
+  steps = 0;
+  vr.length=ve.length=vt.length=lb.length=0;
+  ch.update('none');
+  Robot.tremor=0; Robot.fallAngle=0; Robot.falling=false; Robot.lean=0;
+  flashActive = false;
+
+  const ws = WIND_STRENGTH[s] || 0;
+  WindParticles.setSpeed(ws);
+  document.getElementById('wind-label').textContent = 'WIND: ' + WIND_LABEL[s];
+  document.getElementById('wind-label').style.color = ws>15?'#f08030':ws>5?'var(--gold)':'var(--dim)';
+
+  // Button states
+  const ids = ['b0','b1','b2','b3','b4'];
+  const scs = ['normal','wind1','wind2','wind3','crash'];
+  const cls = ['s-ok','s-w1','s-w2','s-w3','s-crash'];
+  ids.forEach((id,i)=>{
+    document.getElementById(id).className = 'sbtn' + (scs[i]===s ? ' '+cls[i] : '');
+  });
+
+  // Reset UI
+  hideBanner();
+  document.getElementById('countdown').className = '';
+  document.getElementById('cd-num').textContent = '—';
+  document.getElementById('madv').textContent = '—';
+  document.getElementById('madv').className = 'mv';
+  document.getElementById('sbadge').className = 'sb-normal';
+  document.getElementById('sbadge').textContent = '● NORMAL';
+  document.getElementById('ppill').className = 'ppill pp-ok';
+  document.getElementById('ppill').textContent = '✓ NORMAL';
+  document.getElementById('cbar').style.width = '100%';
+  document.getElementById('cbar').style.background = 'var(--green)';
+  document.getElementById('mtau').textContent = calibratedTau.toFixed(3);
+}
+
+function showBanner(vel){
+  document.getElementById('det-banner').classList.add('show');
+  document.getElementById('det-vel-txt').textContent = 'v = ' + vel.toFixed(3);
+}
+function hideBanner(){
+  document.getElementById('det-banner').classList.remove('show');
+  const fo = document.getElementById('flash-overlay');
+  if(fo) fo.style.opacity='0';
+}
+function pulseFlash(ratio){
+  const fo = document.getElementById('flash-overlay');
+  if(!fo) return;
+  const intensity = Math.min((ratio-1)*.6, .7);
+  fo.style.opacity = intensity;
+  clearTimeout(flashTimer);
+  flashTimer = setTimeout(()=>{ fo.style.opacity='0'; }, 600);
+}
+
+// ─── Main tick ───────────────────────────────────
+function tick(){
+  const h = Gen.next();
+  const r = mon.push(h);
+  steps = r.step;
+  const ratio = r.tau ? r.ewma/r.tau : 0;
+  const ws = WIND_STRENGTH[scenario]||0;
+
+  // Chart
+  lb.push(r.step); vr.push(+r.v.toFixed(3)); ve.push(+r.ewma.toFixed(3)); vt.push(r.tau);
+  if(lb.length>MAX){ lb.shift();vr.shift();ve.shift();vt.shift(); }
+  if(r.tau){ const mx=Math.max(...ve.filter(v=>v!=null),r.tau*1.55); ch.options.scales.y.max=Math.ceil(mx*1.12*10)/10; }
+  ch.update('none');
+
+  // Metrics
+  document.getElementById('mvel').textContent = r.ewma.toFixed(3);
+  document.getElementById('mtau').textContent = r.tau ? r.tau.toFixed(3) : '—';
+  const velEl = document.getElementById('mvel');
+  velEl.className = 'mv' + (r.an?' dr': ratio>.8?' wn':' ok');
+
+  // ── Countdown — ratio-based prediction ──────────
+  // When ratio first exceeds threshold in crash scenario, estimate steps to full collapse
+  // using the velocity growth rate (linear extrapolation)
+  if(scenario==='crash' && r.an){
+    if(!firstDetectStep){
+      firstDetectStep = r.step;
+      // In the crash signal, collapse is at t≈150 in gen time; estimate remaining
+      collapseStep = r.step + Math.round(60 / Math.max(ratio - 1, 0.1));
+      collapseStep = Math.min(collapseStep, r.step + 80); // cap
+    }
+    const adv = Math.max(0, collapseStep - r.step);
+    document.getElementById('countdown').className = 'show';
+    const cdEl = document.getElementById('cd-num');
+    cdEl.textContent = adv;
+    cdEl.className   = 'cd-num' + (adv<15?' urgent':'');
+    document.getElementById('madv').textContent = adv;
+    document.getElementById('madv').className   = 'mv' + (adv<20?' dr':adv<50?' wn':' ok');
+    if(adv===0) Robot.falling=true;
+  } else if(scenario!=='crash'){
+    document.getElementById('countdown').className='';
+    firstDetectStep=null; collapseStep=null;
+  }
+
+  // ── Phase pill + badge ──────────────────────────
+  const pp    = document.getElementById('ppill');
+  const badge = document.getElementById('sbadge');
+
+  if(r.an && ratio>1.4){
+    pp.className='ppill pp-ano'; pp.textContent='⚡ ANOMALY';
+    badge.className='sb-alert';  badge.textContent='⚡ ANOMALY';
+    if(!wasAnomAlous) showBanner(r.ewma);
+    pulseFlash(ratio);
+  } else if(r.an){
+    pp.className='ppill pp-wrn'; pp.textContent='▲ WARNING';
+    badge.className='sb-warn';   badge.textContent='▲ VELOCITY RISING';
+    if(!wasAnomAlous) showBanner(r.ewma);
+    pulseFlash(ratio);
+  } else {
+    pp.className='ppill pp-ok'; pp.textContent='✓ NORMAL';
+    badge.className='sb-normal'; badge.textContent='● NORMAL';
+    if(wasAnomAlous){ hideBanner(); firstDetectStep=null; collapseStep=null; }
+  }
+  wasAnomAlous = r.an;
+
+  // ── Robot + ground scroll + wind ────────────────
+  const walkSpeed = Robot.falling ? 0 : (1 + ws*.04);
+  scrollGround(walkSpeed);
+  Robot.update(scenario, r.an, ratio, ws);
+  WindParticles.update();
+
+  // Auto-restart crash
+  if(scenario==='crash' && r.step>250) setTimeout(()=>setS('crash'), 1600);
+}
+
+// ─── Bootstrap ───────────────────────────────────
+window.addEventListener('resize', ()=>WindParticles.resize());
+Gen.init('normal');
+setInterval(tick, 105);
+</script>
+
+<!-- Flash overlay (needs to be inside stage, added via JS) -->
+<script>
+const fo = document.createElement('div');
+fo.id='flash-overlay'; fo.style.cssText=
+  'position:absolute;inset:0;pointer-events:none;z-index:10;opacity:0;' +
+  'background:radial-gradient(ellipse 70% 50% at 50% 40%, rgba(255,48,48,.2) 0%, transparent 70%);' +
+  'transition:opacity .08s;';
+document.getElementById('stage').appendChild(fo);
+</script>
+</body>
+</html>
