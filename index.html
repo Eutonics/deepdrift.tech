@@ -1,0 +1,1059 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DeepDrift — Hidden-State Velocity Monitor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+:root {
+  --bg:       #080a0e;
+  --bg1:      #0d1017;
+  --bg2:      #111620;
+  --bg3:      #161c28;
+  --line:     #1e2535;
+  --line2:    #28304a;
+  --text:     #cdd5e0;
+  --muted:    #4a5568;
+  --dim:      #2d3748;
+  --gold:     #e2b96a;
+  --gold2:    #f0c96e;
+  --teal:     #4ecdc4;
+  --red:      #f06060;
+  --blue:     #5b9cf6;
+  --green:    #52d17c;
+  --purple:   #a78bfa;
+  --font-ui:  'Space Grotesk', sans-serif;
+  --font-mono:'JetBrains Mono', monospace;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden}
+body{background:var(--bg);color:var(--text);font-family:var(--font-ui);font-size:13px;display:flex;flex-direction:column}
+
+/* ── NAV ── */
+nav{
+  height:48px;flex-shrink:0;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 20px;
+  border-bottom:1px solid var(--line);
+  background:var(--bg1);
+}
+.nav-logo{
+  display:flex;align-items:center;gap:10px;
+  font-family:var(--font-mono);font-size:14px;font-weight:500;
+  letter-spacing:0.06em;color:#e8ecf4;
+}
+.logo-mark{
+  width:26px;height:26px;border:1.5px solid var(--gold);border-radius:5px;
+  display:flex;align-items:center;justify-content:center;
+  position:relative;overflow:hidden;
+}
+.logo-mark::after{
+  content:'';position:absolute;bottom:0;left:0;right:0;height:40%;
+  background:var(--gold);opacity:.12;
+}
+.logo-mark svg{position:relative;z-index:1}
+.nav-tabs{display:flex;gap:2px}
+.nav-tab{
+  padding:6px 14px;font-size:12px;font-family:var(--font-ui);font-weight:400;
+  background:transparent;border:none;border-radius:5px;
+  color:var(--muted);cursor:pointer;transition:all .15s;letter-spacing:.02em;
+}
+.nav-tab:hover{color:var(--text);background:var(--bg3)}
+.nav-tab.active{color:var(--gold);background:rgba(226,185,106,.08);font-weight:500}
+.nav-right{display:flex;align-items:center;gap:12px}
+.status-pill{
+  display:flex;align-items:center;gap:6px;
+  padding:4px 10px;border-radius:20px;border:1px solid var(--line);
+  font-family:var(--font-mono);font-size:10px;color:var(--muted);
+  background:var(--bg2);
+}
+.status-dot{width:6px;height:6px;border-radius:50%;background:var(--muted);transition:all .3s}
+.status-dot.live{background:var(--green);box-shadow:0 0 8px var(--green)}
+.status-dot.warn{background:var(--red);box-shadow:0 0 8px var(--red)}
+.status-dot.calib{background:var(--blue);animation:pulse-dot 1.2s ease-in-out infinite}
+@keyframes pulse-dot{0%,100%{opacity:1}50%{opacity:.4}}
+.version-tag{font-family:var(--font-mono);font-size:10px;color:var(--dim);letter-spacing:.05em}
+
+/* ── PANELS ── */
+.panel-wrap{flex:1;overflow:hidden;display:flex;flex-direction:column}
+.panel{display:none;flex:1;overflow:hidden}
+.panel.active{display:flex}
+
+/* ── MAIN PANEL layout ── */
+#panel-monitor{flex-direction:column}
+.monitor-top{
+  flex-shrink:0;
+  display:grid;grid-template-columns:repeat(5,1fr);
+  border-bottom:1px solid var(--line);
+  background:var(--bg1);
+}
+.m-cell{
+  padding:12px 18px;border-right:1px solid var(--line);
+}
+.m-cell:last-child{border-right:none}
+.m-key{font-family:var(--font-mono);font-size:9px;letter-spacing:.12em;color:var(--muted);text-transform:uppercase;margin-bottom:4px}
+.m-val{font-family:var(--font-mono);font-size:20px;font-weight:500;color:var(--text);line-height:1;transition:color .2s}
+.m-val.ok{color:var(--green)}.m-val.warn{color:var(--gold)}.m-val.danger{color:var(--red)}
+.m-sub{font-size:10px;color:var(--dim);margin-top:2px}
+
+.monitor-body{flex:1;display:grid;grid-template-columns:1fr 210px;overflow:hidden}
+.chart-col{display:flex;flex-direction:column;padding:16px 20px;gap:12px;overflow:hidden}
+.chart-hdr{display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.chart-label{font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;color:var(--muted)}
+.phase-tag{
+  font-family:var(--font-mono);font-size:10px;padding:3px 9px;border-radius:3px;
+  border:1px solid;letter-spacing:.06em;transition:all .2s;
+}
+.phase-tag.calibrating{color:var(--blue);border-color:rgba(91,156,246,.3);background:rgba(91,156,246,.05)}
+.phase-tag.normal{color:var(--green);border-color:rgba(82,209,124,.3);background:rgba(82,209,124,.05)}
+.phase-tag.anomaly{color:var(--red);border-color:rgba(240,96,96,.3);background:rgba(240,96,96,.08);animation:blink .5s step-end infinite}
+@keyframes blink{50%{opacity:.3}}
+.legend{display:flex;gap:14px;flex-shrink:0}
+.leg{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted)}
+.leg-sq{width:12px;height:2px;border-radius:1px}
+
+.chart-wrap{flex:1;position:relative;min-height:0}
+
+/* right sidebar */
+.right-col{
+  border-left:1px solid var(--line);background:var(--bg1);
+  display:flex;flex-direction:column;overflow:hidden;
+}
+.rc-section{padding:14px;border-bottom:1px solid var(--line)}
+.rc-title{font-family:var(--font-mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+.sparkline{display:flex;align-items:flex-end;gap:1.5px;height:32px}
+.sb{flex:1;border-radius:1px 1px 0 0;transition:height .1s,background .1s;min-height:2px}
+.calib-track{height:2px;background:var(--line);border-radius:2px;overflow:hidden;margin-bottom:4px}
+.calib-fill{height:100%;background:var(--blue);width:0%;transition:width .2s;border-radius:2px}
+.stat-table{width:100%;border-collapse:collapse}
+.stat-table td{padding:4px 0;border-bottom:1px solid rgba(30,37,53,.8)}
+.stat-table td:first-child{font-family:var(--font-mono);font-size:10px;color:var(--muted)}
+.stat-table td:last-child{font-family:var(--font-mono);font-size:10px;color:var(--text);text-align:right}
+.event-list{display:flex;flex-direction:column;gap:3px;overflow-y:auto;max-height:160px;flex:1}
+.ev{
+  display:flex;gap:7px;padding:3px 6px;border-radius:3px;
+  border-left:2px solid var(--line2);background:var(--bg2);
+  font-family:var(--font-mono);font-size:9px;animation:slideIn .15s ease;
+}
+.ev.anomaly{border-left-color:var(--red)}.ev.ok{border-left-color:var(--green)}.ev.calib{border-left-color:var(--blue)}
+.ev-t{color:var(--dim);flex-shrink:0}.ev-m{color:var(--text)}
+@keyframes slideIn{from{opacity:0;transform:translateY(-3px)}}
+
+/* ── INPUT PANEL ── */
+#panel-input{flex-direction:column;overflow-y:auto}
+.input-layout{display:grid;grid-template-columns:1fr 1fr;gap:0;flex:1;overflow:hidden}
+.input-col{padding:24px;border-right:1px solid var(--line);overflow-y:auto;display:flex;flex-direction:column;gap:18px}
+.input-col:last-child{border-right:none}
+.field-label{font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+textarea{
+  width:100%;background:var(--bg2);border:1px solid var(--line);border-radius:6px;
+  color:var(--text);font-family:var(--font-mono);font-size:11px;
+  padding:10px;resize:vertical;outline:none;line-height:1.6;
+  transition:border-color .2s;
+}
+textarea:focus{border-color:var(--gold)}
+.btn{
+  padding:8px 16px;border-radius:5px;font-family:var(--font-ui);font-size:12px;font-weight:500;
+  cursor:pointer;border:1px solid;transition:all .15s;letter-spacing:.02em;
+}
+.btn-primary{background:rgba(226,185,106,.1);border-color:var(--gold);color:var(--gold)}
+.btn-primary:hover{background:rgba(226,185,106,.18)}
+.btn-ghost{background:transparent;border-color:var(--line);color:var(--muted)}
+.btn-ghost:hover{border-color:var(--line2);color:var(--text)}
+.btn-danger{background:rgba(240,96,96,.08);border-color:rgba(240,96,96,.4);color:var(--red)}
+.btn-danger:hover{background:rgba(240,96,96,.15)}
+.row{display:flex;gap:8px;align-items:center}
+select{
+  background:var(--bg2);border:1px solid var(--line);border-radius:5px;
+  color:var(--text);font-family:var(--font-mono);font-size:11px;
+  padding:6px 10px;outline:none;cursor:pointer;
+}
+select:focus{border-color:var(--gold)}
+input[type=range]{accent-color:var(--gold);width:100%}
+input[type=number]{
+  background:var(--bg2);border:1px solid var(--line);border-radius:5px;
+  color:var(--text);font-family:var(--font-mono);font-size:11px;
+  padding:6px 10px;outline:none;width:80px;
+}
+input[type=number]:focus{border-color:var(--gold)}
+.hint{font-size:11px;color:var(--muted);line-height:1.6}
+.code-hint{
+  background:var(--bg);border:1px solid var(--line);border-radius:5px;
+  padding:10px 12px;font-family:var(--font-mono);font-size:10px;
+  color:var(--teal);line-height:1.8;overflow-x:auto;white-space:pre;
+}
+.code-comment{color:var(--dim)}
+.divider{border:none;border-top:1px solid var(--line);margin:4px 0}
+.file-zone{
+  border:1.5px dashed var(--line2);border-radius:8px;padding:24px;
+  text-align:center;cursor:pointer;transition:all .2s;
+  display:flex;flex-direction:column;align-items:center;gap:8px;
+}
+.file-zone:hover,.file-zone.drag{border-color:var(--gold);background:rgba(226,185,106,.04)}
+.file-zone-icon{font-size:24px;opacity:.4}
+.file-zone-label{font-size:12px;color:var(--muted)}
+.file-zone-sub{font-size:10px;color:var(--dim)}
+.tag{
+  display:inline-block;padding:2px 7px;border-radius:3px;
+  font-family:var(--font-mono);font-size:10px;
+}
+.tag-onnx{background:rgba(167,139,250,.1);color:var(--purple);border:1px solid rgba(167,139,250,.2)}
+.tag-json{background:rgba(78,205,196,.1);color:var(--teal);border:1px solid rgba(78,205,196,.2)}
+.tag-csv{background:rgba(91,156,246,.1);color:var(--blue);border:1px solid rgba(91,156,246,.2)}
+.model-status{
+  padding:10px 12px;border-radius:5px;border:1px solid var(--line);
+  background:var(--bg2);font-family:var(--font-mono);font-size:10px;
+  color:var(--muted);display:flex;align-items:center;gap:8px;
+}
+.model-status.loaded{color:var(--green);border-color:rgba(82,209,124,.2);background:rgba(82,209,124,.04)}
+.model-status.loading{color:var(--gold);border-color:rgba(226,185,106,.2)}
+.model-status.error{color:var(--red);border-color:rgba(240,96,96,.2)}
+
+/* ── ABOUT PANEL ── */
+#panel-about{overflow-y:auto}
+.about-wrap{max-width:720px;margin:0 auto;padding:32px 24px}
+.about-hero{margin-bottom:32px}
+.about-h1{font-size:28px;font-weight:600;letter-spacing:-.02em;color:#e8ecf4;margin-bottom:8px}
+.about-sub{font-size:14px;color:var(--muted);line-height:1.7}
+.about-formula{
+  padding:16px 20px;background:var(--bg2);border:1px solid var(--line);
+  border-radius:8px;margin:20px 0;
+  font-family:var(--font-mono);font-size:14px;color:var(--gold2);
+  text-align:center;letter-spacing:.04em;
+}
+.about-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:24px 0}
+.about-card{
+  padding:16px;background:var(--bg2);border:1px solid var(--line);border-radius:8px;
+}
+.about-card-num{font-family:var(--font-mono);font-size:22px;font-weight:500;color:var(--gold);margin-bottom:4px}
+.about-card-label{font-size:11px;color:var(--muted);line-height:1.5}
+.about-section{margin-bottom:24px}
+.about-h2{font-size:15px;font-weight:500;color:var(--text);margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+.about-p{font-size:12px;color:var(--muted);line-height:1.8;margin-bottom:8px}
+.phase-list{display:flex;flex-direction:column;gap:6px;margin:10px 0}
+.pl-item{display:flex;gap:10px;align-items:flex-start;padding:8px 10px;background:var(--bg2);border-radius:5px;border-left:3px solid}
+.pl-e{border-left-color:var(--green)}.pl-c{border-left-color:var(--blue)}.pl-t{border-left-color:var(--red)}
+.pl-name{font-family:var(--font-mono);font-size:10px;font-weight:500;color:var(--text);margin-bottom:2px}
+.pl-desc{font-size:11px;color:var(--muted)}
+.links-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
+.link-btn{
+  padding:7px 14px;border-radius:5px;font-size:12px;font-weight:500;
+  border:1px solid var(--line);color:var(--muted);text-decoration:none;
+  transition:all .15s;display:flex;align-items:center;gap:6px;
+}
+.link-btn:hover{border-color:var(--gold);color:var(--gold)}
+
+/* Scrollbar */
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--line2);border-radius:4px}
+
+@media(max-width:800px){
+  .monitor-top{grid-template-columns:repeat(3,1fr)}
+  .monitor-body{grid-template-columns:1fr}
+  .right-col{display:none}
+  .input-layout{grid-template-columns:1fr}
+  .about-grid{grid-template-columns:repeat(2,1fr)}
+}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-logo">
+    <div class="logo-mark">
+      <svg width="13" height="11" viewBox="0 0 13 11" fill="none">
+        <polyline points="0,9 3,4.5 6,7 9,2 12,5" stroke="#e2b96a" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    DeepDrift
+  </div>
+
+  <div class="nav-tabs">
+    <button class="nav-tab active" onclick="showPanel('monitor',this)">Monitor</button>
+    <button class="nav-tab" onclick="showPanel('input',this)">Connect model</button>
+    <button class="nav-tab" onclick="showPanel('about',this)">About</button>
+  </div>
+
+  <div class="nav-right">
+    <div class="status-pill">
+      <div class="status-dot calib" id="s-dot"></div>
+      <span id="s-label">calibrating</span>
+    </div>
+    <div class="version-tag">v1.0</div>
+  </div>
+</nav>
+
+<div class="panel-wrap">
+
+<!-- ─────────────────── MONITOR ─────────────────── -->
+<div class="panel active" id="panel-monitor">
+
+  <div class="monitor-top">
+    <div class="m-cell">
+      <div class="m-key">Velocity (EWMA)</div>
+      <div class="m-val" id="mv-vel">—</div>
+      <div class="m-sub">‖h_t − h_{t−1}‖₂</div>
+    </div>
+    <div class="m-cell">
+      <div class="m-key">Threshold τ</div>
+      <div class="m-val" id="mv-tau">—</div>
+      <div class="m-sub">Q₇₅ + 1.5 × IQR</div>
+    </div>
+    <div class="m-cell">
+      <div class="m-key">v / τ ratio</div>
+      <div class="m-val" id="mv-ratio">—</div>
+      <div class="m-sub">anomaly when &gt; 1.0</div>
+    </div>
+    <div class="m-cell">
+      <div class="m-key">Anomalies</div>
+      <div class="m-val" id="mv-anom">0</div>
+      <div class="m-sub" id="mv-anom-rate">—</div>
+    </div>
+    <div class="m-cell">
+      <div class="m-key">Source</div>
+      <div class="m-val" id="mv-src" style="font-size:13px;padding-top:3px">demo</div>
+      <div class="m-sub" id="mv-src-sub">synthetic signal</div>
+    </div>
+  </div>
+
+  <div class="monitor-body">
+    <div class="chart-col">
+      <div class="chart-hdr">
+        <div class="chart-label">SEMANTIC VELOCITY — TEMPORAL</div>
+        <div class="phase-tag calibrating" id="phase-tag">CALIBRATING</div>
+      </div>
+      <div class="legend">
+        <div class="leg"><div class="leg-sq" style="background:var(--gold)"></div>velocity (EWMA)</div>
+        <div class="leg"><div class="leg-sq" style="background:var(--blue);opacity:.5"></div>raw</div>
+        <div class="leg"><div class="leg-sq" style="background:var(--red);opacity:.6;border-top:1px dashed var(--red);background:none;width:14px"></div>threshold τ</div>
+      </div>
+      <div class="chart-wrap">
+        <canvas id="mainChart"></canvas>
+      </div>
+    </div>
+
+    <div class="right-col">
+      <div class="rc-section">
+        <div class="rc-title">Velocity sparkline</div>
+        <div class="sparkline" id="sparkline"></div>
+      </div>
+      <div class="rc-section">
+        <div class="rc-title">Calibration</div>
+        <div class="calib-track"><div class="calib-fill" id="calib-fill"></div></div>
+        <div style="display:flex;justify-content:space-between;margin-top:4px">
+          <span style="font-family:var(--font-mono);font-size:9px;color:var(--dim)" id="calib-txt">0 / 80</span>
+          <span style="font-family:var(--font-mono);font-size:9px;color:var(--dim)" id="calib-pct">0%</span>
+        </div>
+      </div>
+      <div class="rc-section" style="flex:0 0 auto">
+        <div class="rc-title">Live stats</div>
+        <table class="stat-table">
+          <tr><td>raw velocity</td><td id="st-raw">—</td></tr>
+          <tr><td>EWMA</td><td id="st-ewma">—</td></tr>
+          <tr><td>threshold τ</td><td id="st-tau">—</td></tr>
+          <tr><td>step</td><td id="st-step">0</td></tr>
+          <tr><td>anomalies</td><td id="st-anom">0</td></tr>
+          <tr><td>rate</td><td id="st-rate">—</td></tr>
+        </table>
+      </div>
+      <div class="rc-section" style="flex:1;overflow:hidden;display:flex;flex-direction:column">
+        <div class="rc-title">Event log</div>
+        <div class="event-list" id="event-list"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─────────────────── INPUT ─────────────────── -->
+<div class="panel" id="panel-input">
+<div class="input-layout">
+
+  <!-- LEFT: ONNX + settings -->
+  <div class="input-col">
+    <div>
+      <div class="field-label">Load ONNX model</div>
+      <div class="file-zone" id="onnx-zone" onclick="document.getElementById('onnx-file').click()"
+           ondragover="event.preventDefault();this.classList.add('drag')"
+           ondragleave="this.classList.remove('drag')"
+           ondrop="handleOnnxDrop(event)">
+        <div class="file-zone-icon">⬡</div>
+        <div class="file-zone-label">Drop <span class="tag tag-onnx">model.onnx</span> here</div>
+        <div class="file-zone-sub">or click to browse · runs entirely in browser</div>
+      </div>
+      <input type="file" id="onnx-file" accept=".onnx" style="display:none" onchange="loadOnnx(this.files[0])">
+      <div class="model-status" id="model-status" style="margin-top:8px">
+        <span id="ms-dot">○</span> <span id="ms-text">no model loaded</span>
+      </div>
+    </div>
+
+    <div>
+      <div class="field-label">Export from PyTorch</div>
+      <div class="code-hint"><span class="code-comment"># Export your model once</span>
+import torch
+
+dummy = torch.randn(1, SEQ_LEN, INPUT_DIM)
+torch.onnx.export(
+    model,
+    dummy,
+    "model.onnx",
+    input_names=["input"],
+    output_names=["hidden"],
+    opset_version=17,
+    dynamic_axes={"input": {0:"batch"}}
+)
+<span class="code-comment"># Then drag model.onnx above ↑</span></div>
+    </div>
+
+    <hr class="divider">
+
+    <div>
+      <div class="field-label">Monitor settings</div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+            <span style="font-size:11px;color:var(--muted)">Calibration steps</span>
+            <span class="tag tag-onnx" id="calib-steps-lbl">80</span>
+          </div>
+          <input type="range" min="20" max="200" step="10" value="80" id="calib-steps-range"
+                 oninput="updateCalibSteps(this.value)">
+        </div>
+        <div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+            <span style="font-size:11px;color:var(--muted)">IQR multiplier k</span>
+            <span class="tag tag-onnx" id="iqr-k-lbl">1.5</span>
+          </div>
+          <input type="range" min="0.5" max="3.0" step="0.1" value="1.5" id="iqr-k-range"
+                 oninput="document.getElementById('iqr-k-lbl').textContent=parseFloat(this.value).toFixed(1)">
+        </div>
+        <div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+            <span style="font-size:11px;color:var(--muted)">EWMA alpha</span>
+            <span class="tag tag-onnx" id="ewma-lbl">0.3</span>
+          </div>
+          <input type="range" min="0.05" max="0.9" step="0.05" value="0.3" id="ewma-range"
+                 oninput="document.getElementById('ewma-lbl').textContent=parseFloat(this.value).toFixed(2)">
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <button class="btn btn-primary" onclick="applySettings()">Apply & reset monitor</button>
+      <button class="btn btn-ghost" onclick="showPanel('monitor',document.querySelectorAll('.nav-tab')[0])">← Back to monitor</button>
+    </div>
+  </div>
+
+  <!-- RIGHT: manual JSON / CSV / demo -->
+  <div class="input-col">
+
+    <div>
+      <div class="field-label">Paste hidden-state vectors</div>
+      <div class="hint" style="margin-bottom:8px">
+        JSON array of arrays — each row is one hidden state vector h_t.<br>
+        Or paste a flat CSV (one vector per line, comma-separated).
+      </div>
+      <div class="row" style="margin-bottom:8px;gap:6px">
+        <span class="tag tag-json">JSON</span>
+        <span style="font-family:var(--font-mono);font-size:10px;color:var(--dim)">[[0.1,0.2,...], [...], ...]</span>
+      </div>
+      <div class="row" style="margin-bottom:8px;gap:6px">
+        <span class="tag tag-csv">CSV</span>
+        <span style="font-family:var(--font-mono);font-size:10px;color:var(--dim)">0.1,0.2,0.3,...  (one row = one step)</span>
+      </div>
+      <textarea id="vec-input" rows="7" placeholder="[[0.12, -0.34, 0.56, ...],&#10; [0.15, -0.31, 0.59, ...],&#10; ...]"></textarea>
+      <div class="row" style="margin-top:8px;gap:8px">
+        <button class="btn btn-primary" onclick="runManualVectors()">Run vectors through monitor</button>
+        <button class="btn btn-ghost" onclick="document.getElementById('vec-input').value=''">Clear</button>
+      </div>
+      <div id="vec-result" style="font-family:var(--font-mono);font-size:10px;color:var(--green);margin-top:8px;display:none"></div>
+    </div>
+
+    <hr class="divider">
+
+    <div>
+      <div class="field-label">Demo scenarios</div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <div class="row">
+          <select id="demo-select">
+            <option value="normal">Normal / laminar flow</option>
+            <option value="ood">OOD injection at step 80</option>
+            <option value="drift">Gradual concept drift</option>
+            <option value="crash">RL policy collapse</option>
+            <option value="breeze">Breeze Paradox (wind perturbation)</option>
+          </select>
+          <input type="number" id="demo-dim" value="64" min="8" max="512" style="width:70px" title="Hidden state dimension">
+          <span style="font-size:11px;color:var(--dim)">dim</span>
+        </div>
+        <div class="row">
+          <select id="demo-speed">
+            <option value="80">80ms / step</option>
+            <option value="120" selected>120ms / step</option>
+            <option value="200">200ms / step</option>
+            <option value="400">400ms / step</option>
+          </select>
+          <button class="btn btn-primary" onclick="startDemo()">Start demo</button>
+          <button class="btn btn-danger" onclick="stopDemo()">Stop</button>
+        </div>
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div>
+      <div class="field-label">Python client snippet</div>
+      <div class="code-hint"><span class="code-comment"># Send h directly from Python via JS bridge</span>
+<span class="code-comment"># (Pyodide / Jupyter) or export to JSON first</span>
+
+import json, numpy as np
+
+# After each forward pass:
+h = model.encoder(x)[-1, 0].detach().numpy()
+vectors.append(h.tolist())
+
+# Save and paste above ↑
+with open("vectors.json","w") as f:
+    json.dump(vectors, f)</div>
+    </div>
+
+  </div>
+</div>
+</div>
+
+<!-- ─────────────────── ABOUT ─────────────────── -->
+<div class="panel" id="panel-about">
+<div class="about-wrap">
+
+  <div class="about-hero">
+    <div class="about-h1">DeepDrift</div>
+    <div class="about-sub">
+      Zero-training hidden-state velocity monitoring for deep neural networks.<br>
+      Detects failure <em>before</em> it reaches the output.
+    </div>
+    <div class="about-formula">v_t = ‖h_t − h_{t−1}‖₂</div>
+    <div class="about-sub" style="font-size:12px">
+      Semantic Velocity — the L2-norm of consecutive hidden-state differences. A single number
+      that captures the kinetic "tremor" inside a model during anomalous inference.
+    </div>
+  </div>
+
+  <div class="about-grid">
+    <div class="about-card">
+      <div class="about-card-num">0.869</div>
+      <div class="about-card-label">AUROC on ViT-B/16<br>CIFAR-100 → SVHN OOD detection</div>
+    </div>
+    <div class="about-card">
+      <div class="about-card-num">57–99</div>
+      <div class="about-card-label">Steps of advance warning<br>before RL trajectory deviation</div>
+    </div>
+    <div class="about-card">
+      <div class="about-card-num">+56%</div>
+      <div class="about-card-label">Average Precision improvement<br>in fraud detection (AP 0.35→0.55)</div>
+    </div>
+    <div class="about-card">
+      <div class="about-card-num">41%</div>
+      <div class="about-card-label">Compute savings in LoRA<br>via velocity-based early stopping</div>
+    </div>
+    <div class="about-card">
+      <div class="about-card-num">&lt;1.5%</div>
+      <div class="about-card-label">Runtime overhead<br>across all tested architectures</div>
+    </div>
+    <div class="about-card">
+      <div class="about-card-num">18+</div>
+      <div class="about-card-label">Validated domains<br>across 19 experimental reports</div>
+    </div>
+  </div>
+
+  <div class="about-section">
+    <div class="about-h2">How it works</div>
+    <div class="about-p">
+      Traditional monitoring reads output signals — softmax probabilities, loss, reward.
+      These are <em>lagging indicators</em>: by the time they degrade, failure has already propagated
+      through the entire network. DeepDrift reads the hidden-state trajectory instead,
+      measuring the kinetic energy of representations as they evolve through the model.
+    </div>
+    <div class="about-p">
+      A short calibration phase (80–100 normal-operation steps) sets a non-parametric
+      IQR threshold. Thereafter, each step is O(1): one L2-norm, one comparison.
+    </div>
+  </div>
+
+  <div class="about-section">
+    <div class="about-h2">Three-phase pattern in Vision Transformers</div>
+    <div class="phase-list">
+      <div class="pl-item pl-e">
+        <div>
+          <div class="pl-name">Phase 1 — Elevation (layers 1–7)</div>
+          <div class="pl-desc">OOD velocity exceeds in-distribution by 15–25%. The network works harder to process unfamiliar features. Per-layer AUROC peaks at 0.983 (layer 5).</div>
+        </div>
+      </div>
+      <div class="pl-item pl-c">
+        <div>
+          <div class="pl-name">Phase 2 — Compensation (layers 8–10)</div>
+          <div class="pl-desc">Paradoxically, OOD velocity drops below in-distribution. Deep layers force anomalous representations toward the learned manifold — a form of "denial". AUROC inverts (&lt;0.5).</div>
+        </div>
+      </div>
+      <div class="pl-item pl-t">
+        <div>
+          <div class="pl-name">Phase 3 — Terminal Spike (layer 11)</div>
+          <div class="pl-desc">+26.8% OOD velocity at the final layer. The classification head cannot reconcile the compressed anomalous representation with its learned prototypes.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="about-section">
+    <div class="about-h2">Resources</div>
+    <div class="links-row">
+      <a class="link-btn" href="https://github.com/Eutonics/DeepDrift" target="_blank">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        GitHub
+      </a>
+      <a class="link-btn" href="https://zenodo.org/records/18622319" target="_blank">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/></svg>
+        Zenodo paper
+      </a>
+      <a class="link-btn" href="https://pypi.org/project/deepdrift/" target="_blank">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9h6M9 12h6M9 15h4"/></svg>
+        pip install deepdrift
+      </a>
+    </div>
+  </div>
+
+</div>
+</div><!-- /about -->
+
+</div><!-- /panel-wrap -->
+
+<script>
+// ════════════════════════════════════════════
+//  DeepDrift Monitor Core
+// ════════════════════════════════════════════
+class DeepDriftMonitor {
+  constructor({ calibSteps=80, iqrK=1.5, ewmaAlpha=0.3 }={}) {
+    this.calibSteps = calibSteps;
+    this.iqrK = iqrK;
+    this.ewmaAlpha = ewmaAlpha;
+    this.reset();
+  }
+  reset() {
+    this.prevH = null;
+    this.calibVels = [];
+    this.calibrated = false;
+    this.threshold = null;
+    this.ewmaVel = 0;
+    this.step = 0;
+  }
+  push(h) {
+    // h: Float32Array or Array
+    if (this.prevH === null) { this.prevH = Float32Array.from(h); return this._status(0); }
+    const vel = this._l2(h, this.prevH);
+    this.prevH = Float32Array.from(h);
+    this.ewmaVel = this.step === 0 ? vel : this.ewmaAlpha * vel + (1 - this.ewmaAlpha) * this.ewmaVel;
+    if (!this.calibrated) {
+      this.calibVels.push(vel);
+      if (this.calibVels.length >= this.calibSteps) this._calibrate();
+    }
+    this.step++;
+    return this._status(vel);
+  }
+  _l2(a, b) {
+    let s = 0;
+    for (let i = 0; i < a.length; i++) { const d = a[i] - b[i]; s += d * d; }
+    return Math.sqrt(s);
+  }
+  _calibrate() {
+    const arr = [...this.calibVels].sort((a,b)=>a-b);
+    const n = arr.length;
+    const q25 = arr[Math.floor(n*0.25)];
+    const q75 = arr[Math.floor(n*0.75)];
+    this.threshold = q75 + this.iqrK * (q75 - q25);
+    this.calibrated = true;
+  }
+  _status(vel) {
+    const anomalous = this.calibrated && this.ewmaVel > this.threshold;
+    return {
+      step: this.step,
+      velocity: vel,
+      ewmaVel: this.ewmaVel,
+      threshold: this.threshold,
+      anomalous,
+      calibrated: this.calibrated,
+      calibProgress: Math.min(this.calibVels.length / this.calibSteps, 1),
+      phase: !this.calibrated ? 'calibrating' : anomalous ? 'anomaly' : 'normal'
+    };
+  }
+}
+
+// ════════════════════════════════════════════
+//  Chart
+// ════════════════════════════════════════════
+const MAX = 300;
+const vRaw=[], vEwma=[], vTau=[], lbls=[];
+const ctx = document.getElementById('mainChart').getContext('2d');
+
+const chart = new Chart(ctx, {
+  type:'line',
+  data:{
+    labels:lbls,
+    datasets:[
+      { label:'raw', data:vRaw,  borderColor:'rgba(91,156,246,.3)', borderWidth:1, pointRadius:0, tension:.3, fill:false, order:3 },
+      { label:'ewma', data:vEwma, borderColor:'#e2b96a', borderWidth:2, pointRadius:0, tension:.4,
+        fill:{target:2, above:'rgba(240,96,96,.08)', below:'rgba(226,185,106,.04)'}, order:1 },
+      { label:'τ', data:vTau,  borderColor:'rgba(240,96,96,.45)', borderWidth:1.5,
+        borderDash:[5,4], pointRadius:0, tension:0, fill:false, order:2 }
+    ]
+  },
+  options:{
+    responsive:true, maintainAspectRatio:false, animation:{duration:0},
+    plugins:{
+      legend:{display:false},
+      tooltip:{
+        mode:'index', intersect:false,
+        backgroundColor:'#111620', borderColor:'#1e2535', borderWidth:1,
+        titleColor:'#4a5568', bodyColor:'#cdd5e0',
+        titleFont:{family:'JetBrains Mono',size:10},
+        bodyFont:{family:'JetBrains Mono',size:10},
+        callbacks:{label:(c)=>` ${c.dataset.label}: ${c.raw!=null?c.raw.toFixed(4):'—'}`}
+      }
+    },
+    scales:{
+      x:{ticks:{color:'#2d3748',maxTicksLimit:8,font:{family:'JetBrains Mono',size:9}}, grid:{color:'rgba(255,255,255,0.025)'}},
+      y:{min:0, ticks:{color:'#2d3748',font:{family:'JetBrains Mono',size:9}}, grid:{color:'rgba(255,255,255,0.025)'}}
+    }
+  }
+});
+
+// ════════════════════════════════════════════
+//  State
+// ════════════════════════════════════════════
+let monitor = new DeepDriftMonitor();
+let anomalyCount = 0, totalSteps = 0;
+const sparkBuf = new Array(44).fill(0);
+let sparkMax = 1;
+let demoTimer = null;
+let onnxSession = null;
+let sourceName = 'demo', sourceSub = 'synthetic signal';
+
+// ════════════════════════════════════════════
+//  Handle a single step result
+// ════════════════════════════════════════════
+function handleResult(r) {
+  totalSteps = r.step;
+
+  lbls.push(r.step);
+  vRaw.push(parseFloat(r.velocity.toFixed(4)));
+  vEwma.push(parseFloat(r.ewmaVel.toFixed(4)));
+  vTau.push(r.threshold);
+  if (lbls.length > MAX) { lbls.shift(); vRaw.shift(); vEwma.shift(); vTau.shift(); }
+
+  // auto-scale Y
+  if (r.threshold) {
+    const maxV = Math.max(...vEwma.filter(v=>v!=null), r.threshold*1.4);
+    chart.options.scales.y.max = Math.ceil(maxV * 1.15 * 10) / 10;
+  }
+  chart.update('none');
+
+  // metrics
+  const fmt = (v,d=3) => v!=null ? v.toFixed(d) : '—';
+  document.getElementById('mv-vel').textContent   = fmt(r.ewmaVel);
+  document.getElementById('mv-tau').textContent   = fmt(r.threshold);
+  document.getElementById('st-raw').textContent   = fmt(r.velocity,4);
+  document.getElementById('st-ewma').textContent  = fmt(r.ewmaVel,4);
+  document.getElementById('st-tau').textContent   = fmt(r.threshold,4);
+  document.getElementById('st-step').textContent  = r.step;
+  document.getElementById('mv-src').textContent   = sourceName;
+  document.getElementById('mv-src-sub').textContent = sourceSub;
+
+  const ratio = r.threshold ? (r.ewmaVel / r.threshold) : null;
+  const ratioEl = document.getElementById('mv-ratio');
+  ratioEl.textContent = ratio ? ratio.toFixed(3) : '—';
+  ratioEl.className = 'm-val' + (ratio == null ? '' : ratio > 1 ? ' danger' : ratio > 0.8 ? ' warn' : ' ok');
+
+  // calibration bar
+  const pct = Math.round(r.calibProgress * 100);
+  document.getElementById('calib-fill').style.width = pct + '%';
+  document.getElementById('calib-txt').textContent = `${Math.round(r.calibProgress*80)} / 80`;
+  document.getElementById('calib-pct').textContent = pct + '%';
+
+  if (r.calibrated && document.getElementById('calib-fill').style.background !== 'var(--green)') {
+    document.getElementById('calib-fill').style.background = 'var(--green)';
+    addLog('calib', `calibrated — τ = ${r.threshold.toFixed(4)}`);
+  }
+
+  // anomaly
+  if (r.anomalous) {
+    anomalyCount++;
+    document.getElementById('mv-anom').textContent = anomalyCount;
+    document.getElementById('mv-anom').className = 'm-val danger';
+    const rate = (anomalyCount / totalSteps * 100).toFixed(1);
+    document.getElementById('mv-anom-rate').textContent = rate + '% rate';
+    document.getElementById('st-anom').textContent = anomalyCount;
+    document.getElementById('st-rate').textContent = rate + '%';
+    if (anomalyCount <= 3 || anomalyCount % 8 === 0)
+      addLog('anomaly', `v=${r.ewmaVel.toFixed(3)} > τ=${r.threshold?.toFixed(3)}`);
+  }
+
+  // phase
+  const tag = document.getElementById('phase-tag');
+  const dot = document.getElementById('s-dot');
+  const lbl = document.getElementById('s-label');
+  if (!r.calibrated) {
+    tag.className='phase-tag calibrating'; tag.textContent='CALIBRATING';
+    dot.className='status-dot calib'; lbl.textContent='calibrating';
+    document.getElementById('mv-vel').className='m-val';
+  } else if (r.anomalous) {
+    tag.className='phase-tag anomaly'; tag.textContent='⚡ ANOMALY';
+    dot.className='status-dot warn'; lbl.textContent='anomaly';
+    document.getElementById('mv-vel').className='m-val danger';
+  } else {
+    tag.className='phase-tag normal'; tag.textContent='✓ NORMAL';
+    dot.className='status-dot live'; lbl.textContent='monitoring';
+    document.getElementById('mv-vel').className='m-val ok';
+  }
+
+  // sparkline
+  sparkBuf.push(r.ewmaVel);
+  if (sparkBuf.length > 44) sparkBuf.shift();
+  sparkMax = Math.max(...sparkBuf, 0.001);
+  const spark = document.getElementById('sparkline');
+  spark.innerHTML = sparkBuf.map(v => {
+    const h = Math.max(3, Math.round(v/sparkMax*32));
+    const isDanger = r.threshold && v > r.threshold;
+    return `<div class="sb" style="height:${h}px;background:${isDanger?'var(--red)':'var(--gold)'};opacity:${isDanger?.8:.5}"></div>`;
+  }).join('');
+}
+
+// ════════════════════════════════════════════
+//  Event log
+// ════════════════════════════════════════════
+const LOG_MAX = 80;
+function addLog(type, msg) {
+  const el = document.getElementById('event-list');
+  const e = document.createElement('div');
+  e.className = `ev ${type}`;
+  e.innerHTML = `<span class="ev-t">${String(totalSteps).padStart(5,'0')}</span><span class="ev-m">${msg}</span>`;
+  el.prepend(e);
+  while (el.children.length > LOG_MAX) el.removeChild(el.lastChild);
+}
+
+// ════════════════════════════════════════════
+//  Demo signal generator
+// ════════════════════════════════════════════
+const DemoGen = {
+  t: 0, dim: 64, scenario: 'normal',
+  base: null,
+  init(dim, scenario) {
+    this.dim = dim; this.scenario = scenario; this.t = 0;
+    this.base = Float32Array.from({length:dim}, ()=>Math.random()*2-1);
+  },
+  next() {
+    this.t++;
+    const t=this.t, d=this.dim;
+    const noise = (s=1) => (Math.random()-0.5)*2*s;
+    let h = new Float32Array(d);
+
+    if (this.scenario === 'normal') {
+      for (let i=0;i<d;i++) h[i] = this.base[i] + Math.sin(t*.05+i)*.4 + noise(.3);
+    } else if (this.scenario === 'ood') {
+      if (t < 80) {
+        for (let i=0;i<d;i++) h[i] = this.base[i] + Math.sin(t*.05+i)*.4 + noise(.3);
+      } else {
+        for (let i=0;i<d;i++) h[i] = this.base[i]*2.8 + noise(2.5);
+      }
+    } else if (this.scenario === 'drift') {
+      const drift = t/250 * 2.2;
+      for (let i=0;i<d;i++) h[i] = this.base[i] + drift + noise(.3+drift*.15);
+    } else if (this.scenario === 'crash') {
+      if (t < 100)
+        for (let i=0;i<d;i++) h[i] = this.base[i] + noise(.25);
+      else if (t < 160)
+        for (let i=0;i<d;i++) h[i] = this.base[i]*(1+(t-100)*.022) + noise(.25+(t-100)*.06);
+      else
+        for (let i=0;i<d;i++) h[i] = noise(3.5);
+    } else if (this.scenario === 'breeze') {
+      // Breeze Paradox: agent compensates internally but policy is fine externally
+      const wind = t > 60 ? (t-60)/40 * 1.5 : 0;
+      for (let i=0;i<d;i++) h[i] = this.base[i] + noise(.2) + wind * Math.sin(t*.08+i*.3);
+    }
+    return h;
+  }
+};
+
+function startDemo() {
+  stopDemo();
+  const scenario = document.getElementById('demo-select').value;
+  const dim = parseInt(document.getElementById('demo-dim').value)||64;
+  const speed = parseInt(document.getElementById('demo-speed').value)||120;
+  DemoGen.init(dim, scenario);
+  sourceName = 'demo'; sourceSub = scenario.replace('_',' ');
+  resetMonitor();
+  demoTimer = setInterval(() => {
+    const h = DemoGen.next();
+    const r = monitor.push(h);
+    handleResult(r);
+  }, speed);
+  addLog('calib', `demo started: ${scenario} dim=${dim}`);
+  showPanel('monitor', document.querySelectorAll('.nav-tab')[0]);
+}
+
+function stopDemo() {
+  if (demoTimer) { clearInterval(demoTimer); demoTimer = null; }
+}
+
+// ════════════════════════════════════════════
+//  Manual vectors
+// ════════════════════════════════════════════
+function runManualVectors() {
+  const raw = document.getElementById('vec-input').value.trim();
+  if (!raw) return;
+  let vecs;
+  try {
+    if (raw.startsWith('[')) {
+      vecs = JSON.parse(raw);
+    } else {
+      // CSV
+      vecs = raw.split('\n').filter(l=>l.trim()).map(l => l.split(',').map(Number));
+    }
+    if (!Array.isArray(vecs) || !Array.isArray(vecs[0])) throw new Error('expected array of arrays');
+  } catch(e) {
+    document.getElementById('vec-result').style.display='block';
+    document.getElementById('vec-result').style.color='var(--red)';
+    document.getElementById('vec-result').textContent = '✗ parse error: ' + e.message;
+    return;
+  }
+  stopDemo();
+  resetMonitor();
+  sourceName = 'manual'; sourceSub = `${vecs.length} vectors · dim ${vecs[0].length}`;
+  let i = 0;
+  const timer = setInterval(() => {
+    if (i >= vecs.length) { clearInterval(timer); return; }
+    handleResult(monitor.push(vecs[i++]));
+  }, 60);
+  document.getElementById('vec-result').style.display='block';
+  document.getElementById('vec-result').style.color='var(--green)';
+  document.getElementById('vec-result').textContent = `✓ streaming ${vecs.length} vectors (dim=${vecs[0].length})…`;
+  showPanel('monitor', document.querySelectorAll('.nav-tab')[0]);
+}
+
+// ════════════════════════════════════════════
+//  ONNX runtime
+// ════════════════════════════════════════════
+async function loadOnnx(file) {
+  if (!file) return;
+  setModelStatus('loading', `loading ${file.name}…`);
+  try {
+    // Dynamic import of onnxruntime-web
+    if (!window.ort) {
+      setModelStatus('loading', 'importing onnxruntime-web…');
+      const script = document.createElement('script');
+      script.src = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/ort.min.js';
+      await new Promise((res,rej) => { script.onload=res; script.onerror=rej; document.head.appendChild(script); });
+    }
+    const buf = await file.arrayBuffer();
+    onnxSession = await ort.InferenceSession.create(buf, { executionProviders: ['wasm'] });
+    const inputs  = onnxSession.inputNames.join(', ');
+    const outputs = onnxSession.outputNames.join(', ');
+    setModelStatus('loaded', `${file.name} · inputs: ${inputs} · outputs: ${outputs}`);
+    addLog('calib', `ONNX loaded: ${file.name}`);
+    sourceName = 'ONNX'; sourceSub = file.name;
+    addLog('ok', 'use runOnnxStep(inputTensor) to feed the model');
+  } catch(e) {
+    setModelStatus('error', 'load failed: ' + e.message);
+  }
+}
+
+function handleOnnxDrop(e) {
+  e.preventDefault();
+  document.getElementById('onnx-zone').classList.remove('drag');
+  const f = e.dataTransfer.files[0];
+  if (f) loadOnnx(f);
+}
+
+function setModelStatus(cls, msg) {
+  const el = document.getElementById('model-status');
+  el.className = 'model-status ' + cls;
+  document.getElementById('ms-dot').textContent = cls==='loaded'?'●':cls==='loading'?'◌':'○';
+  document.getElementById('ms-text').textContent = msg;
+}
+
+// Public API: call this from your own JS after a forward pass
+window.runOnnxStep = async function(inputData, inputName) {
+  if (!onnxSession) { console.warn('No ONNX session loaded'); return; }
+  try {
+    const inName = inputName || onnxSession.inputNames[0];
+    const outName = onnxSession.outputNames[0];
+    const tensor = new ort.Tensor('float32', inputData.flat ? inputData.flat() : inputData,
+                                  [1, inputData.length]);
+    const out = await onnxSession.run({ [inName]: tensor });
+    const h = Array.from(out[outName].data);
+    const r = monitor.push(h);
+    handleResult(r);
+    return r;
+  } catch(e) {
+    console.error('ONNX inference error:', e);
+  }
+};
+
+// ════════════════════════════════════════════
+//  Settings & reset
+// ════════════════════════════════════════════
+function updateCalibSteps(v) {
+  document.getElementById('calib-steps-lbl').textContent = v;
+}
+
+function applySettings() {
+  const cs   = parseInt(document.getElementById('calib-steps-range').value);
+  const iqrK = parseFloat(document.getElementById('iqr-k-range').value);
+  const ewma = parseFloat(document.getElementById('ewma-range').value);
+  monitor = new DeepDriftMonitor({ calibSteps:cs, iqrK, ewmaAlpha:ewma });
+  resetDisplay();
+  addLog('calib', `settings applied: calibSteps=${cs} k=${iqrK} α=${ewma}`);
+}
+
+function resetMonitor() {
+  monitor.reset();
+  anomalyCount = 0; totalSteps = 0;
+  resetDisplay();
+}
+
+function resetDisplay() {
+  vRaw.length=0; vEwma.length=0; vTau.length=0; lbls.length=0;
+  chart.update('none');
+  sparkBuf.fill(0);
+  document.getElementById('event-list').innerHTML='';
+  document.getElementById('calib-fill').style.width='0%';
+  document.getElementById('calib-fill').style.background='var(--blue)';
+  document.getElementById('calib-txt').textContent='0 / 80';
+  document.getElementById('calib-pct').textContent='0%';
+  document.getElementById('mv-anom').textContent='0';
+  document.getElementById('mv-anom').className='m-val';
+  document.getElementById('mv-anom-rate').textContent='—';
+  document.getElementById('phase-tag').className='phase-tag calibrating';
+  document.getElementById('phase-tag').textContent='CALIBRATING';
+  document.getElementById('s-dot').className='status-dot calib';
+  document.getElementById('s-label').textContent='calibrating';
+}
+
+// ════════════════════════════════════════════
+//  Navigation
+// ════════════════════════════════════════════
+function showPanel(name, tabEl) {
+  document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
+  if (tabEl) tabEl.classList.add('active');
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  document.getElementById('panel-'+name).classList.add('active');
+}
+
+// ════════════════════════════════════════════
+//  Auto-start demo
+// ════════════════════════════════════════════
+DemoGen.init(64, 'normal');
+demoTimer = setInterval(() => {
+  handleResult(monitor.push(DemoGen.next()));
+}, 120);
+</script>
+</body>
+</html>
